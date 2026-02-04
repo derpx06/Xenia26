@@ -23,4 +23,9 @@ dependencies = [
     "qdrant-client",
     "numpy",
     "pymongo",
+    "selenium",
+    "chromedriver-autoinstaller",
+    "brotli",
+    "html2text",
+    "beautifulsoup4>=4.14.3",
 ]

@@ -16,11 +16,7 @@ def get_ollama_models():
     Get the list of available Ollama models and return the count.
     """
     try:
-        # List all available models from Ollama
         models_response = ollama.list()
-        
-        # Extract model names from the response
-        # ollama.list() returns a ListResponse object with a 'models' attribute
         model_names = [model.model for model in models_response.models]
         
         return {
