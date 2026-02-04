@@ -3,5 +3,24 @@ name = "backend"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
-dependencies = []
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "ollama",
+    "langchain",
+    "langchain-openai",
+    "langchain-community",
+    "langgraph",
+    "llama-index",
+    "torch",
+    "transformers",
+    "sentence-transformers",
+    "opik",
+    "loguru",
+    "pydantic",
+    "python-dotenv",
+    "qdrant-client",
+    "numpy",
+    "pymongo",
+]
