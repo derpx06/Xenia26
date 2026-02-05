@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+.input-style {
+  @apply w-full rounded-lg border border-slate-300 dark:border-[#3b3f54]
+  bg-white dark:bg-[#1c1d27] h-12 px-4 text-base
+  focus:ring-2 focus:ring-primary outline-none;
+}
