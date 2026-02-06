@@ -1,3 +1,14 @@
+import os
+import warnings
+
+# Suppress deprecation warnings from dependencies (Python 3.14 compatibility issues)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=UserWarning, module="langchain_core")
+
+# Set USER_AGENT if not already set
+if not os.environ.get("USER_AGENT"):
+    os.environ["USER_AGENT"] = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
