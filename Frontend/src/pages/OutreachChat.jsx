@@ -174,12 +174,14 @@ Our localized LLM engine was designed specifically to automate outreach while ke
                 );
                 setTimeout(() => setCurrentStep(null), 1000);
               } else if (data.type === "response") {
-                setCurrentStep({ type: "responding", content: "Generating response..." });
+                setCurrentStep({ type: "responding" });
                 assistantContent += data.content;
                 setStreamingContent(assistantContent);
               } else if (data.type === "done") {
-                setIsStreaming(false);
+                // Clear all agent process state when done
                 setCurrentStep(null);
+                setIsStreaming(false);
+
                 if (assistantContent.trim()) {
                   setMessages((prev) => [
                     ...prev,
@@ -191,8 +193,12 @@ Our localized LLM engine was designed specifically to automate outreach while ke
                     },
                   ]);
                 }
-                setStreamingContent("");
-                setToolCalls([]);
+
+                // Clear streaming content and tool calls after brief delay
+                setTimeout(() => {
+                  setStreamingContent("");
+                  setToolCalls([]);
+                }, 500);
               } else if (data.type === "error") {
                 throw new Error(data.content);
               }
@@ -354,9 +360,9 @@ Our localized LLM engine was designed specifically to automate outreach while ke
           <div ref={bottomRef} />
         </div>
 
-        {/* AGENT PROCESS PANEL - Separate section for thinking/tools */}
-        {showSteps && (currentStep || toolCalls.length > 0 || isStreaming) && (
-          <div className="mx-6 md:mx-12 mb-4 bg-gradient-to-br from-purple-900/10 to-blue-900/10 border border-purple-500/20 rounded-xl overflow-hidden">
+        {/* AGENT PROCESS PANEL - Only show during active streaming */}
+        {showSteps && isStreaming && (currentStep || toolCalls.length > 0) && (
+          <div className="mx-6 md:mx-12 mb-4 bg-gradient-to-br from-purple-900/10 to-blue-900/10 border border-purple-500/20 rounded-xl overflow-hidden animate-in fade-in duration-300">
             <div className="px-4 py-3 bg-purple-900/20 border-b border-purple-500/20 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Brain className="w-4 h-4 text-purple-400" />
@@ -370,11 +376,21 @@ Our localized LLM engine was designed specifically to automate outreach while ke
               {currentStep && (
                 <div className="space-y-2">
                   {currentStep.type === "thinking" && (
-                    <div className="flex items-center gap-3 bg-blue-600/10 border border-blue-500/20 rounded-lg px-4 py-3">
-                      <Brain className="w-5 h-5 text-blue-400 animate-pulse" />
-                      <div>
-                        <p className="text-sm text-blue-400 font-medium">Thinking...</p>
-                        <p className="text-xs text-blue-300/60">Agent is processing your request</p>
+                    <div className="flex items-center gap-3 bg-blue-600/10 border border-blue-500/20 rounded-lg px-4 py-3 animate-pulse">
+                      <div className="relative">
+                        <Brain className="w-5 h-5 text-blue-400" />
+                        <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                        </span>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm text-blue-400 font-medium">Analyzing your request</p>
+                        <div className="flex items-center gap-1 mt-1">
+                          <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                          <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                          <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce"></div>
+                        </div>
                       </div>
                     </div>
                   )}
