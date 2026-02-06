@@ -115,7 +115,6 @@ Our localized LLM engine was designed specifically to automate outreach while ke
         body: JSON.stringify({
           model: selectedModel,
           message: userMessage,
-          model: "mistral:7b",
           conversation_history: messages
             .filter((m) => m.type === "text")
             .map((m) => ({ role: m.role, content: m.content })),
@@ -225,23 +224,46 @@ Our localized LLM engine was designed specifically to automate outreach while ke
       <Sidebar />
 
       <div className="flex-1 flex flex-col">
-        {/* TOP BAR */}
-        <div className="px-8 py-5 border-b border-white/5 flex justify-between items-center">
-          <div>
-            <p className="text-xs text-neutral-500">AI Agent › LangGraph Streaming</p>
-            <h1 className="text-xl font-semibold">Outreach Chat</h1>
+        {/* Chat Header */}
+        <div className="p-6 border-b border-white/10 bg-gradient-to-r from-blue-900/20 to-purple-900/20">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                AI Outreach Assistant
+              </h1>
+              <p className="text-sm text-neutral-400 mt-1">
+                Powered by AI agents with web search & scraping
+              </p>
+            </div>
+
+            {/* Model Selector */}
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-neutral-400">Model:</label>
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="px-3 py-2 bg-[#1A1A1A] border border-white/10 rounded-lg text-sm text-neutral-300 focus:outline-none focus:border-blue-500/50 cursor-pointer hover:border-white/20 transition-colors"
+              >
+                {availableModels.length > 0 ? (
+                  availableModels.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))
+                ) : (
+                  <option value="mistral:7b">mistral:7b</option>
+                )}
+              </select>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowSteps(!showSteps)}
-              className="text-xs bg-purple-600/20 text-purple-400 px-3 py-1 rounded-full border border-purple-500/20 hover:bg-purple-600/30 transition"
-            >
-              {showSteps ? "Hide" : "Show"} Steps
-            </button>
-            <span className="text-xs bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full border border-emerald-500/20">
-              MISTRAL:7B
-            </span>
-          </div>
+
+          {/* Toggle Steps Button */}
+          <button
+            onClick={() => setShowSteps(!showSteps)}
+            className="mt-3 px-3 py-1 text-xs bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 rounded-md transition-colors"
+          >
+            {showSteps ? "Hide Steps" : "Show Steps"}
+          </button>
         </div>
 
         {/* CHAT AREA */}
