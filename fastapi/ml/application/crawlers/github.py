@@ -77,7 +77,8 @@ class GithubProfileCrawler(BaseCrawler):
         existing = self.model.find(link=f"https://github.com/{username}")
         if existing is not None:
             logger.info(f"GitHub profile already exists: {username}")
-            return
+            # Return cached content so the agent tool can use it
+            return existing.content
 
         logger.info(f"Extracting GitHub profile: {username}")
 
@@ -238,6 +239,9 @@ class GithubProfileCrawler(BaseCrawler):
         logger.info(f"   - Repos: {active_repos}, Stars: {total_stars}, Forks: {total_forks}")
         logger.info(f"   - Profile README: {'Yes' if profile_readme else 'No'}")
         logger.info(f"   - Top repo READMEs: {sum(1 for r in top_repos if r.get('readme'))}/{len(top_repos)}")
+        
+        # Return the scraped content for agent to use
+        return content
 
 
 # Backward compatibility alias

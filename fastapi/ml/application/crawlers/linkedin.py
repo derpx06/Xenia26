@@ -180,10 +180,12 @@ class LinkedInCrawler(BaseSeleniumCrawler):
                 for post in posts
             ]
             self.model.bulk_insert(post_documents)
-            logger.info(f"✅ Saved {len(posts)} posts to database")
+            logger.info(f"✅ Saved {len(posts)} individual posts to database")
         
+        # Return the scraped content for agent to use
         self.driver.quit()
         logger.info(f"✅ Finished scraping profile: {link}")
+        return content
 
     def _slow_scroll(self) -> None:
         """Scroll page slowly to mimic human behavior and load dynamic content."""

@@ -21,7 +21,7 @@ class AgentState(TypedDict):
 
 # Cache compiled graphs by model name
 @lru_cache(maxsize=10)
-def create_agent_graph(model_name: str = "mistral:7b", max_iterations: int = 10):
+def create_agent_graph(model_name: str = "qwen2.5:7b", max_iterations: int = 10):
     """
     Create a LangGraph agent with tool calling capabilities.
     
@@ -34,29 +34,46 @@ def create_agent_graph(model_name: str = "mistral:7b", max_iterations: int = 10)
     """
     logger.info(f"Creating agent graph with model: {model_name}")
     
-    # System prompt - VERY directive about tool use
-    system_prompt = """You are an AI assistant with these tools:
-- duckduckgo_search: Search the web
-- scrape_article: Read webpage content
-- generate_email: Create outreach emails
+    # System prompt - Clear about when to use tools vs when to respond
+    system_prompt = """You are an AI assistant with specialized tools.
 
-MANDATORY RULES:
-1. If user asks about current events, news, trends, or anything timely → YOU MUST call duckduckgo_search
-2. If user provides a URL → YOU MUST call scrape_article
-3. If user asks to generate/create/write an email → YOU MUST call generate_email
-4. DO NOT try to answer from memory for current information - ALWAYS use tools
-5. DO NOT explain what you're doing - just call the tool
+TOOLS:
+- duckduckgo_search: Web search
+- scrape_article: Extract data from URLs (GitHub, LinkedIn, Twitter, Medium, etc.)
+- generate_email: Create emails
 
-REQUIRED ACTIONS:
-- "search for X" → call duckduckgo_search(query="X")
-- "latest X news" → call duckduckgo_search(query="latest X news")
-- "read URL" → call scrape_article(url="URL")
-- "generate email" → call generate_email(...)
+WHEN TO USE TOOLS (make tool calls, no text):
+- User provides ANY URL (github.com, linkedin.com, twitter.com, etc.) → call scrape_article
+- User asks to search/find information → call duckduckgo_search  
+- User asks to generate/create email → call generate_email
 
-After getting tool results, present clean answers WITHOUT mentioning you used tools."""
+WHEN TO RESPOND WITH TEXT (no tool calls):
+- Answering questions about yourself or your capabilities
+- Presenting results AFTER tools have returned data
+- General conversation
+
+CRITICAL RULES:
+1. NEVER make up data about URLs - ALWAYS call scrape_article for ANY URL
+2. DO NOT say "I'm going to call X" - either CALL the tool OR respond with text
+3. For URLs: Just call scrape_article immediately, no explanation
+4. After tool returns data: Present it clearly in your response
+
+EXAMPLES:
+
+User: "https://github.com/username"
+You: [Call scrape_article tool immediately]
+
+User: "hi" or "hello"  
+You: "Hello! I can help you search the web, scrape articles from URLs, or generate emails."
+
+User: "search for AI news"
+You: [Call duckduckgo_search tool immediately]
+
+REMEMBER: URLs = tool calls. Questions = text responses. Be decisive."""
     
     # Initialize the LLM with tools - higher temperature for better tool calling
-    llm = ChatOllama(model=model_name, temperature=0.3)
+    # qwen2.5 is better at tool calling than mistral
+    llm = ChatOllama(model=model_name, temperature=0.9)
     llm_with_tools = llm.bind_tools(TOOLS)
     
     # Define the agent node
@@ -132,7 +149,7 @@ After getting tool results, present clean answers WITHOUT mentioning you used to
 
 def run_agent(
     message: str,
-    model: str = "mistral:7b",
+    model: str = "qwen2.5:7b",
     conversation_history: list = None,
     max_iterations: int = 10
 ):
@@ -178,7 +195,7 @@ def run_agent(
 
 async def stream_agent(
     message: str,
-    model: str = "mistral:7b",
+    model: str = "qwen2.5:7b",
     conversation_history: list = None,
     max_iterations: int = 10
 ):

@@ -68,7 +68,7 @@ Our localized LLM engine was designed specifically to automate outreach while ke
 
   // Model selection
   const [availableModels, setAvailableModels] = useState([]);
-  const [selectedModel, setSelectedModel] = useState("mistral:7b");
+  const [selectedModel, setSelectedModel] = useState("qwen2.5:7b");
 
   // Enhanced streaming state
   const [streamingContent, setStreamingContent] = useState("");
@@ -87,7 +87,6 @@ Our localized LLM engine was designed specifically to automate outreach while ke
         setAvailableModels(data.models || []);
       } catch (error) {
         console.error("Error fetching models:", error);
-        setAvailableModels(["mistral:7b", "llama3:8b"]); // Fallback
       }
     };
     fetchModels();

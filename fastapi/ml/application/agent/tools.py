@@ -2,10 +2,24 @@
 Agent tools for web search and article scraping.
 """
 from typing import Annotated
+from urllib.parse import urlparse
+import re
+
 from langchain_core.tools import tool
 from duckduckgo_search import DDGS
-from langchain_community.document_loaders import AsyncHtmlLoader
-from langchain_community.document_transformers import Html2TextTransformer
+from loguru import logger
+from ml.application.crawlers.dispatcher import CrawlerDispatcher
+from ml.application.crawlers.linkedin import LinkedInCrawler
+from ml.application.crawlers.github import GithubProfileCrawler
+from ml.application.crawlers.medium import MediumCrawler
+from ml.application.crawlers.custom_article import CustomArticleCrawler
+from ml.domain.documents import UserDocument
+try:
+    from ml.application.crawlers.twitter import TwitterProfileCrawler
+    TWITTER_AVAILABLE = True
+except ImportError:
+    TWITTER_AVAILABLE = False
+    logger.warning("TwitterProfileCrawler not available (twikit not installed)")
 
 
 @tool
@@ -31,63 +45,97 @@ def duckduckgo_search(query: Annotated[str, "The search query to look up"]) -> s
             output += f"   {result['body']}\n"
             output += f"   URL: {result['href']}\n\n"
         
+        logger.info(f"duckduckgo_search returning {len(results)} results for query: '{query}'")
         return output
     except Exception as e:
         return f"Error performing search: {str(e)}"
 
 
 @tool
-def scrape_article(url: Annotated[str, "The URL of the article to scrape"]) -> str:
-    """Scrape and extract content from a web article.
+def scrape_article(url: Annotated[str, "The URL of the article/profile to scrape"]) -> str:
+    """Scrape and extract content from web articles, profiles, and repositories.
     
-    Use this tool to read the full content of a specific web page or article.
-    Good for extracting detailed information from URLs found in search results.
+    Automatically detects the platform and uses the appropriate crawler:
+    - Twitter/X profiles and tweets
+    - LinkedIn profiles and posts
+    - GitHub profiles and repositories  
+    - Medium articles
+    - Any other websites (generic article scraper)
     
     Args:
-        url: The complete URL of the web page to scrape
+        url: Complete URL to scrape
     """
+    from .formatters import format_github_data, format_linkedin_data, format_article_data, format_twitter_data
+    
     try:
-        # Load the HTML content
-        loader = AsyncHtmlLoader([url])
-        docs = loader.load()
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower().replace('www.', '')
         
-        if not docs:
-            return f"Failed to load content from {url}"
+        # Create dummy user for crawlers
+        dummy_user = UserDocument(first_name="Agent", last_name="User")
         
-        # Transform HTML to text
-        html2text = Html2TextTransformer()
-        docs_transformed = html2text.transform_documents(docs)
+        # Twitter/X
+        if 'twitter.com' in domain or 'x.com' in domain:
+            match = re.search(r'/([^/?]+)', parsed.path)
+            if match and match.group(1) not in ['home', 'explore', 'notifications']:
+                username = match.group(1)
+                
+                if TWITTER_AVAILABLE:
+                    logger.info(f"Using TwitterProfileCrawler for @{username}")
+                    try:
+                        crawler = TwitterProfileCrawler(
+                            cookies_file="twitter_cookies.json",
+                            tweet_limit=30,
+                            top_tweet_limit=5
+                        )
+                        content = crawler.extract(username=username, user=dummy_user)
+                        if content:
+                            return format_twitter_data(content)
+                        return f"✅ Twitter profile @{username} scraped successfully"
+                    except Exception as e:
+                        logger.warning(f"Twitter scraping failed: {e}")
         
-        if not docs_transformed:
-            return f"Failed to extract text from {url}"
+        # LinkedIn
+        elif 'linkedin.com' in domain and '/in/' in parsed.path.lower():
+            logger.info("Using LinkedInCrawler")
+            crawler = LinkedInCrawler()
+            content = crawler.extract(link=url, user=dummy_user)
+            if content:
+                return format_linkedin_data(content)
+            return f"✅ LinkedIn profile scraped successfully"
         
-        doc = docs_transformed[0]
+        # GitHub
+        elif 'github.com' in domain:
+            match = re.search(r'/([^/?]+)', parsed.path)
+            if match:
+                username = match.group(1)
+                logger.info(f"Using GithubProfileCrawler for {username}")
+                crawler = GithubProfileCrawler(top_repo_limit=5)
+                content = crawler.extract(username=username, user=dummy_user)
+                if content:
+                    return format_github_data(content)
+                return f"✅ GitHub profile {username} scraped successfully"
         
-        # Extract metadata
-        title = doc.metadata.get('title', 'No title')
-        description = doc.metadata.get('description', 'No description')
+        # Medium
+        elif 'medium.com' in domain or 'towardsdatascience.com' in domain:
+            logger.info("Using MediumCrawler")
+            crawler = MediumCrawler()
+            content = crawler.extract(link=url, user=dummy_user)
+            if content:
+                return format_article_data(content)
+            return f"✅ Medium article scraped successfully"
         
-        # Get content and truncate if too long
-        content = doc.page_content
-        max_content_length = 3000
-        if len(content) > max_content_length:
-            content = content[:max_content_length] + "... (content truncated)"
-        
-        # Format the result
-        result = f"""
-Article from: {url}
-
-Title: {title}
-
-Description: {description}
-
-Content:
-{content}
-"""
-        return result.strip()
+        # Fallback: CustomArticleCrawler
+        logger.info("Using CustomArticleCrawler")
+        crawler = CustomArticleCrawler()
+        content = crawler.extract(link=url, user=dummy_user)
+        if content:
+            return format_article_data(content)
+        return f"✅ Article scraped successfully from {url}"
         
     except Exception as e:
-        return f"Error scraping article from {url}: {str(e)}"
+        logger.error(f"Error scraping {url}: {e}")
+        return f"❌ Error scraping {url}: {str(e)}"
 
 
 @tool
@@ -141,6 +189,7 @@ Include a clear call-to-action. Sign off as "[Your Name]" at the end."""
         llm = ChatOllama(model="qwen2.5:7b", temperature=0.7)
         response = llm.invoke(prompt)
         
+        logger.info(f"generate_email returning AI-generated email for {recipient_name} at {company}")
         # Return the generated content
         return response.content
         
