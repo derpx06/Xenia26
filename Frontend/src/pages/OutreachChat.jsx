@@ -351,112 +351,100 @@ Our localized LLM engine was designed specifically to automate outreach while ke
             </div>
           )}
 
-          {/* Current Step Indicator */}
-          {currentStep && showSteps && (
-            <div className="flex justify-start">
-              {currentStep.type === "thinking" && (
-                <div className="flex items-center gap-3 bg-blue-600/10 border border-blue-500/20 rounded-xl px-4 py-3">
-                  <Brain className="w-5 h-5 text-blue-400 animate-pulse" />
-                  <div>
-                    <p className="text-sm text-blue-400 font-medium">Thinking...</p>
-                    <p className="text-xs text-blue-300/60">Agent is processing your request</p>
-                  </div>
-                </div>
-              )}
-
-              {currentStep.type === "tool_call" && (
-                <div className="flex items-center gap-3 bg-purple-600/10 border border-purple-500/20 rounded-xl px-4 py-3 max-w-xl">
-                  <Wrench className="w-5 h-5 text-purple-400 animate-spin" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-purple-400 font-medium">Using Tool: {currentStep.toolName}</p>
-                    <p className="text-xs text-purple-300/70 truncate">
-                      Input: {JSON.stringify(currentStep.input)}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {currentStep.type === "tool_complete" && (
-                <div className="flex items-center gap-3 bg-green-600/10 border border-green-500/20 rounded-xl px-4 py-3">
-                  <CheckCircle className="w-5 h-5 text-green-400" />
-                  <p className="text-sm text-green-400 font-medium">
-                    Tool Completed: {currentStep.toolName}
-                  </p>
-                </div>
-              )}
-
-              {currentStep.type === "responding" && (
-                <div className="flex items-center gap-3 bg-emerald-600/10 border border-emerald-500/20 rounded-xl px-4 py-3">
-                  <Sparkles className="w-5 h-5 text-emerald-400 animate-pulse" />
-                  <p className="text-sm text-emerald-400 font-medium">Crafting response...</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Tool Calls History During Streaming */}
-          {toolCalls.length > 0 && showSteps && isStreaming && (
-            <div className="bg-[#0A0A0A] border border-white/5 rounded-xl p-4 max-w-2xl">
-              <p className="text-xs text-neutral-500 uppercase tracking-wide mb-3">Tool Execution Log:</p>
-              <div className="space-y-2">
-                {toolCalls.map((tool, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg ${tool.status === "running"
-                      ? "bg-purple-600/10 border border-purple-500/20"
-                      : "bg-green-600/10 border border-green-500/20"
-                      }`}
-                  >
-                    {tool.status === "running" ? (
-                      <Wrench className="w-4 h-4 text-purple-400 animate-spin flex-shrink-0" />
-                    ) : (
-                      <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-xs font-medium ${tool.status === "running" ? "text-purple-400" : "text-green-400"
-                        }`}>
-                        {tool.name}
-                      </p>
-                      <p className="text-xs text-neutral-500 truncate">
-                        {JSON.stringify(tool.input).slice(0, 60)}...
-                      </p>
-                    </div>
-                    <span className={`text-xs px-2 py-0.5 rounded ${tool.status === "running"
-                      ? "bg-purple-500/20 text-purple-300"
-                      : "bg-green-500/20 text-green-300"
-                      }`}>
-                      {tool.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Basic thinking indicator */}
-          {isStreaming && !streamingContent && !currentStep && (
-            <div className="flex items-center gap-3">
-              <div className="bg-blue-600 p-2 rounded-full">
-                <Sparkles className="w-4 h-4" />
-              </div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm text-blue-400">AI Agent is initializing</p>
-                <ThinkingLoader />
-              </div>
-            </div>
-          )}
-
           <div ref={bottomRef} />
         </div>
 
-        {/* INPUT BAR */}
-        <div className="p-6 border-t border-white/5 bg-[#0A0A0A]">
-          <div className="flex items-center bg-[#111] rounded-2xl px-4 py-3">
+        {/* AGENT PROCESS PANEL - Separate section for thinking/tools */}
+        {showSteps && (currentStep || toolCalls.length > 0 || isStreaming) && (
+          <div className="mx-6 md:mx-12 mb-4 bg-gradient-to-br from-purple-900/10 to-blue-900/10 border border-purple-500/20 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 bg-purple-900/20 border-b border-purple-500/20 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Brain className="w-4 h-4 text-purple-400" />
+                <span className="text-sm font-medium text-purple-300">Agent Process</span>
+              </div>
+              <span className="text-xs text-purple-400/60">Internal Steps</span>
+            </div>
+
+            <div className="p-4 space-y-3 max-h-64 overflow-y-auto">
+              {/* Current Step Indicator */}
+              {currentStep && (
+                <div className="space-y-2">
+                  {currentStep.type === "thinking" && (
+                    <div className="flex items-center gap-3 bg-blue-600/10 border border-blue-500/20 rounded-lg px-4 py-3">
+                      <Brain className="w-5 h-5 text-blue-400 animate-pulse" />
+                      <div>
+                        <p className="text-sm text-blue-400 font-medium">Thinking...</p>
+                        <p className="text-xs text-blue-300/60">Agent is processing your request</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {currentStep.type === "tool_call" && (
+                    <div className="flex items-start gap-3 bg-purple-600/10 border border-purple-500/20 rounded-lg px-4 py-3">
+                      <Wrench className="w-5 h-5 text-purple-400 animate-spin" />
+                      <div className="flex-1">
+                        <p className="text-sm text-purple-400 font-medium">
+                          Calling Tool: {currentStep.toolName}
+                        </p>
+                        <p className="text-xs text-purple-300/70 mt-1 truncate">
+                          Input: {JSON.stringify(currentStep.input)}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {currentStep.type === "tool_complete" && (
+                    <div className="flex items-center gap-3 bg-green-600/10 border border-green-500/20 rounded-lg px-4 py-3">
+                      <CheckCircle className="w-5 h-5 text-green-400" />
+                      <p className="text-sm text-green-400 font-medium">
+                        Tool Completed: {currentStep.toolName}
+                      </p>
+                    </div>
+                  )}
+
+                  {currentStep.type === "responding" && (
+                    <div className="flex items-center gap-3 bg-emerald-600/10 border border-emerald-500/20 rounded-lg px-4 py-3">
+                      <Sparkles className="w-5 h-5 text-emerald-400 animate-pulse" />
+                      <p className="text-sm text-emerald-400 font-medium">Crafting response...</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Tool Calls History */}
+              {toolCalls.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs text-neutral-500 uppercase tracking-wide">Tool Execution Log:</p>
+                  {toolCalls.map((tool, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center gap-3 bg-purple-600/5 border border-purple-500/10 rounded-lg px-3 py-2"
+                    >
+                      <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs text-purple-300 font-medium">{tool.name}</span>
+                        <span className="text-neutral-500 mx-2">•</span>
+                        <span className="text-xs text-neutral-400 truncate">
+                          {JSON.stringify(tool.input).slice(0, 60)}...
+                        </span>
+                      </div>
+                      <span className="text-xs text-green-400/60">{tool.status || "completed"}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* INPUT AREA */}
+        <div className="sticky bottom-0 bg-[#050505]/95 backdrop-blur-sm border-t border-white/10 p-6">
+          <div className="flex items-center bg-[#111] rounded-2xl px-4 py-3 gap-3">
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && !isStreaming && sendMessage()}
-              placeholder="Ask AI Agent to search, analyze, or refine..."
+              placeholder="Ask AI Agent to search, analyze, or generate emails..."
               className="flex-1 bg-transparent outline-none text-sm"
               disabled={isStreaming}
             />

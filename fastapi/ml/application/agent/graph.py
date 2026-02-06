@@ -1,14 +1,14 @@
 """
-LangGraph agent implementation with Ollama and tool calling.
+Agent graph implementation using LangGraph.
 """
-from typing import Annotated, TypedDict, Sequence
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage, SystemMessage
-from langchain_core.tools import tool
+from typing import TypedDict, Annotated, Sequence
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage, ToolMessage
 from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolNode
 from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode
 from loguru import logger
+from functools import lru_cache
 
 from .tools import TOOLS
 
@@ -19,6 +19,8 @@ class AgentState(TypedDict):
     iterations: int
 
 
+# Cache compiled graphs by model name
+@lru_cache(maxsize=10)
 def create_agent_graph(model_name: str = "mistral:7b", max_iterations: int = 10):
     """
     Create a LangGraph agent with tool calling capabilities.
@@ -122,11 +124,10 @@ After getting tool results, present clean answers WITHOUT mentioning you used to
     # Add edge from tools back to agent
     workflow.add_edge("tools", "agent")
     
-    # Compile the graph
-    graph = workflow.compile()
-    
-    logger.info("Agent graph created successfully")
-    return graph
+    # Compile and return
+    compiled_graph = workflow.compile()
+    logger.info(f"Agent graph ready for model: {model_name} (cached for reuse)")
+    return compiled_graph
 
 
 def run_agent(
