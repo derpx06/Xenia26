@@ -7,6 +7,8 @@ import RegisterPage from "./pages/RegisterPage";
 import Dashboard from "./pages/Dashboard";
 import OutreachChat from './pages/OutreachChat';
 import Profile from './pages/Profile';
+import Analytics from './pages/Analytics';
+
 
 const App = () => {
   return (
@@ -36,6 +38,7 @@ const App = () => {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/outreach" element={<OutreachChat />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/Analytics" element={<Analytics />} />
 
 
           {/* ✅ 2. Replace placeholder with the actual Dashboard component */}
