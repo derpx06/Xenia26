@@ -1,15 +1,38 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from ml.routes import router as ml_router
 
-app = FastAPI()
+app = FastAPI(
+    title="Xenia26 Backend API",
+    description="Backend API with LangGraph Agent integration",
+    version="1.0.0"
+)
+
+# Add CORS middleware to allow frontend connections
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",  # Vite default port
+        "http://localhost:5174",  # Alternative Vite port
+        "http://localhost:3000",  # Alternative frontend port
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Include ML router
 app.include_router(ml_router)
 
 @app.get("/")
 def read_root():
-    return {"message": "Hello from backend!"}
+    return {
+        "message": "Xenia26 Backend API",
+        "status": "running",
+        "agent_endpoint": "/ml/agent/chat"
+    }
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
