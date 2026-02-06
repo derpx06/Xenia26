@@ -1,5 +1,6 @@
 import React from "react";
-import { LayoutDashboard, Send, BarChart3, Settings, LogOut } from "lucide-react";
+// 1. Added 'User' icon to imports
+import { LayoutDashboard, Send, BarChart3, Settings, LogOut, User } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 
 const NavItem = ({ icon: Icon, label, to }) => {
@@ -10,11 +11,10 @@ const NavItem = ({ icon: Icon, label, to }) => {
   return (
     <button
       onClick={() => navigate(to)}
-      className={`w-full flex items-center gap-3 px-4 py-3 text-sm rounded-xl transition ${
-        isActive
-          ? "bg-blue-600 text-white shadow-lg"
-          : "text-neutral-400 hover:bg-white/5 hover:text-white"
-      }`}
+      className={`w-full flex items-center gap-3 px-4 py-3 text-sm rounded-xl transition ${isActive
+        ? "bg-blue-600 text-white shadow-lg"
+        : "text-neutral-400 hover:bg-white/5 hover:text-white"
+        }`}
     >
       <Icon className="w-4 h-4" />
       {label}
@@ -38,19 +38,25 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 p-4 space-y-2">
-        <NavItem icon={LayoutDashboard} label="Dashboard" to="/dashboard" />
+        <NavItem icon={LayoutDashboard} label="Overview" to="/dashboard" />
         <NavItem icon={Send} label="Outreach" to="/outreach" />
         <NavItem icon={BarChart3} label="Analytics" to="/analytics" />
+
+        {/* 2. Added Profile Link Here */}
+        <NavItem icon={User} label="Profile" to="/profile" />
+
         <NavItem icon={Settings} label="Settings" to="/settings" />
       </nav>
 
-      <button
-        onClick={logout}
-        className="m-4 flex items-center gap-2 px-4 py-3 text-red-400 hover:bg-red-500/10 rounded-lg"
-      >
-        <LogOut className="w-4 h-4" />
-        Logout
-      </button>
+      <div className="p-4 border-t border-white/5">
+        <button
+          onClick={logout}
+          className="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:bg-red-500/10 rounded-lg text-sm transition"
+        >
+          <LogOut className="w-4 h-4" />
+          Logout
+        </button>
+      </div>
     </aside>
   );
 }
