@@ -62,7 +62,7 @@ export default function LoginPage() {
       {/* Back Button */}
       <Link
         to="/"
-        className="absolute top-8 left-8 z-50 flex items-center gap-2 text-sm text-neutral-400 hover:text-white transition-colors group"
+        className="absolute top-4 left-4 md:top-8 md:left-8 z-50 flex items-center gap-2 text-sm text-neutral-400 hover:text-white transition-colors group"
       >
         <div className="p-2 rounded-full bg-white/5 border border-white/5 group-hover:border-white/10 group-hover:bg-white/10 transition-all">
           <ChevronLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
@@ -111,7 +111,7 @@ export default function LoginPage() {
       </div>
 
       {/* Right Side (Form) */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-6 relative z-10">
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 md:p-6 lg:p-12 relative z-10">
         <div className="w-full max-w-[400px] space-y-8">
 
           <div className="flex justify-center lg:justify-start mb-6">

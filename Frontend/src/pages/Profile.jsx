@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import {
-    User, Mail, Building, Globe, Save, Shield, Key, LogOut, Camera, Loader2,
-    Linkedin, Twitter, Github, Instagram, Link as LinkIcon
+    User, Mail, Building, Globe, Save, Loader2,
+    Linkedin, Twitter, Github, Instagram, Link as LinkIcon,
+    MapPin, Briefcase, Award, TrendingUp, ShieldCheck, CheckCircle2
 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 
@@ -27,7 +28,7 @@ export default function Profile() {
         }
     });
 
-    // 2. Load Real Data from Backend on Mount
+    // 2. Load Real Data
     useEffect(() => {
         const fetchProfile = async () => {
             const userEmail = localStorage.getItem("userEmail");
@@ -35,10 +36,7 @@ export default function Profile() {
                 setLoading(false);
                 return;
             }
-
             try {
-                // Since we don't have a GET route yet, we'll try to sync with LocalStorage first
-                // OR ideally, add a GET route. For now, we load what we know:
                 setFormData(prev => ({
                     ...prev,
                     email: userEmail,
@@ -46,14 +44,12 @@ export default function Profile() {
                     company: localStorage.getItem("userCompany") || "",
                     role: localStorage.getItem("userRole") || ""
                 }));
-                // (In a full app, you would fetch GET /api/user/profile/${userEmail} here)
             } catch (error) {
                 console.error("Error loading profile:", error);
             } finally {
                 setLoading(false);
             }
         };
-
         fetchProfile();
     }, []);
 
@@ -71,35 +67,31 @@ export default function Profile() {
         }
     };
 
-    // Handle Save (REAL BACKEND CALL)
+    // Handle Save
     const handleSave = async () => {
         setSaving(true);
         try {
             const userEmail = localStorage.getItem("userEmail");
-
             const response = await fetch(`${BACKEND_URL}/user/profile`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ ...formData, email: userEmail })
             });
-
             const data = await response.json();
 
             if (response.ok) {
-                // 1. Update individual items
                 localStorage.setItem("userName", formData.name);
                 localStorage.setItem("userCompany", formData.company);
                 localStorage.setItem("userRole", formData.role);
 
-                // ✅ 2. ALSO Update the main 'user' object (used by Sidebar)
                 const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
                 const updatedUser = { ...currentUser, name: formData.name };
                 localStorage.setItem("user", JSON.stringify(updatedUser));
 
-                // ✅ 3. DISPATCH EVENT: Tell the Sidebar to refresh immediately
                 window.dispatchEvent(new Event("userUpdated"));
-
-                alert("✅ Profile Saved Successfully!");
+                // Small delay to visually show the "Saved" state if we had one, sticking to alert for now but maybe we can do better? 
+                // Let's stick to the existing pattern but maybe a toast later.
+                alert("✅ Profile Updated Successfully");
             } else {
                 alert(`❌ Error: ${data.message}`);
             }
@@ -112,113 +104,167 @@ export default function Profile() {
     };
 
     return (
-        <div className="flex h-screen bg-[#050505] text-white overflow-hidden font-sans selection:bg-blue-500/30">
+        <div className="flex h-screen bg-[#020202] text-white overflow-hidden font-sans selection:bg-purple-500/30">
             <Sidebar />
 
             <main className="flex-1 flex flex-col h-full relative overflow-y-auto custom-scrollbar">
-                {/* Decorative Background */}
-                <div className="fixed top-0 left-0 w-full h-96 bg-purple-600/5 blur-[120px] pointer-events-none" />
+                {/* Background Atmosphere */}
+                <div className="fixed top-0 left-0 w-full h-[500px] bg-gradient-to-b from-blue-900/10 to-transparent pointer-events-none" />
+                <div className="fixed -top-40 -right-40 w-96 h-96 bg-purple-600/10 blur-[120px] pointer-events-none" />
 
-                <div className="max-w-6xl mx-auto w-full p-6 lg:p-10 z-10 relative">
+                <div className="max-w-7xl mx-auto w-full p-4 md:p-8 lg:p-12 z-10 relative">
 
-                    <div className="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    {/* Page Header */}
+                    <div className="mb-10 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 border-b border-white/5 pb-6">
                         <div>
-                            <h1 className="text-3xl font-bold tracking-tight">Profile & Persona</h1>
-                            <p className="text-neutral-400 text-sm mt-1">
-                                Configure the identity your AI agent will use for outreach.
-                            </p>
+                            <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Account Settings</h1>
+                            <p className="text-neutral-400 text-sm">Manage your personal profile and workspace preferences.</p>
                         </div>
-                        {/* Save Button */}
                         <button
                             onClick={handleSave}
                             disabled={saving || loading}
-                            className="bg-white text-black hover:bg-neutral-200 px-6 py-2.5 rounded-xl font-medium flex items-center gap-2 transition shadow-[0_0_15px_rgba(255,255,255,0.1)] disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="group relative inline-flex items-center gap-2 px-6 py-2.5 bg-white text-black rounded-xl font-semibold text-sm hover:bg-neutral-200 transition-all shadow-[0_0_20px_-5px_rgba(255,255,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                            {saving ? "Saving..." : "Save Changes"}
+                            {saving ? "Saving Changes..." : "Save Profile"}
                         </button>
                     </div>
 
                     {loading ? (
-                        <div className="h-96 flex items-center justify-center">
+                        <div className="h-64 flex items-center justify-center">
                             <Loader2 className="w-8 h-8 text-neutral-600 animate-spin" />
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
 
-                            {/* --- LEFT COLUMN: Identity Card --- */}
-                            <div className="space-y-6">
-                                <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-6 flex flex-col items-center text-center relative overflow-hidden">
-                                    <div className="absolute top-0 w-full h-24 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-blue-600/10" />
-
-                                    <div className="relative mt-8 mb-4 group cursor-pointer">
-                                        <div className="w-28 h-28 rounded-full bg-[#111] border-4 border-[#0A0A0A] flex items-center justify-center text-3xl font-bold text-neutral-300 shadow-2xl overflow-hidden relative">
-                                            {/* Dynamic Initials */}
-                                            {formData.name ? formData.name.split(" ").map(n => n[0]).join("").substring(0, 2).toUpperCase() : <User />}
+                            {/* --- LEFT COLUMN (Profile Card) --- */}
+                            <div className="lg:col-span-4 space-y-6">
+                                {/* Identity Card */}
+                                <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl overflow-hidden relative group transition-all duration-300 hover:border-white/10">
+                                    {/* Cover Image */}
+                                    <div className="h-32 w-full bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 relative">
+                                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-soft-light"></div>
+                                        <div className="absolute top-4 right-4 bg-black/20 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-[10px] font-bold tracking-wider text-white uppercase">
+                                            PRO CLASS
                                         </div>
                                     </div>
 
-                                    <h3 className="text-xl font-bold">{formData.name || "Anonymous User"}</h3>
-                                    <p className="text-sm text-neutral-500">{formData.role || "No Role Set"}</p>
+                                    <div className="px-6 pb-6 relative">
+                                        {/* Avatar */}
+                                        <div className="relative -mt-12 mb-4 inline-block">
+                                            <div className="w-24 h-24 rounded-2xl bg-[#111] border-[4px] border-[#0A0A0A] flex items-center justify-center text-3xl font-bold text-neutral-200 shadow-2xl relative overflow-hidden group-hover:scale-105 transition-transform duration-500">
+                                                {/* Gradient Text Initials */}
+                                                <span className="bg-gradient-to-br from-white to-neutral-500 bg-clip-text text-transparent">
+                                                    {formData.name ? formData.name.split(" ").map(n => n[0]).join("").substring(0, 2).toUpperCase() : "AI"}
+                                                </span>
+                                            </div>
+                                            <div className="absolute -bottom-2 -right-2 p-1.5 bg-blue-600 rounded-full border-[4px] border-[#0A0A0A] shadow-lg" title="Verified Account">
+                                                <ShieldCheck className="w-3.5 h-3.5 text-white" />
+                                            </div>
+                                        </div>
 
-                                    <div className="mt-6 w-full space-y-2">
-                                        <div className="flex justify-between text-xs text-neutral-400 py-3 border-b border-white/5">
-                                            <span>Plan Status</span>
-                                            <span className="text-emerald-400 font-medium bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">PRO</span>
+                                        {/* Name & Role */}
+                                        <div className="mb-6">
+                                            <h2 className="text-xl font-bold text-white mb-1">
+                                                {formData.name || "Anonymous User"}
+                                            </h2>
+                                            <div className="flex items-center gap-2 text-sm text-neutral-400">
+                                                <Briefcase className="w-3.5 h-3.5" />
+                                                <span>{formData.role || "No Role Set"}</span>
+                                                {formData.company && (
+                                                    <>
+                                                        <span className="w-1 h-1 rounded-full bg-neutral-600" />
+                                                        <span>{formData.company}</span>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Quick Stats (Dummy for visuals) */}
+                                        <div className="grid grid-cols-2 gap-3 py-4 border-t border-white/5">
+                                            <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
+                                                <div className="text-xs text-neutral-500 mb-1">Campigns</div>
+                                                <div className="text-lg font-bold text-white flex items-center gap-2">
+                                                    12 <TrendingUp className="w-3 h-3 text-emerald-500" />
+                                                </div>
+                                            </div>
+                                            <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
+                                                <div className="text-xs text-neutral-500 mb-1">Avg Open Rate</div>
+                                                <div className="text-lg font-bold text-white flex items-center gap-2">
+                                                    48% <span className="text-[10px] text-neutral-500 font-normal">top 10%</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Status Badge */}
+                                        <div className="mt-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/5 border border-emerald-500/10 text-xs text-emerald-400">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                            System Active & Ready
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* --- RIGHT COLUMN: Edit Form --- */}
-                            <div className="lg:col-span-2 space-y-6">
+                            {/* --- RIGHT COLUMN (Forms) --- */}
+                            <div className="lg:col-span-8">
+                                <div className="space-y-8">
 
-                                {/* 1. Core Identity */}
-                                <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-8">
-                                    <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
-                                        <User className="w-5 h-5 text-blue-500" />
-                                        Core Identity
-                                    </h3>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <InputField label="Full Name" name="name" value={formData.name} onChange={handleChange} placeholder="e.g. Rahul Sharma" />
-                                        <InputField label="Job Title" name="role" value={formData.role} onChange={handleChange} placeholder="e.g. Founder & CEO" />
-                                        <InputField label="Email Address" name="email" value={formData.email} onChange={handleChange} placeholder="name@company.com" icon={Mail} />
-                                        <InputField label="Company Name" name="company" value={formData.company} onChange={handleChange} placeholder="e.g. TechFlow Solutions" icon={Building} />
-
-                                        <div className="md:col-span-2">
-                                            <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2">
-                                                Professional Bio (AI Context)
-                                            </label>
-                                            <textarea
-                                                name="bio"
-                                                value={formData.bio}
-                                                onChange={handleChange}
-                                                rows="4"
-                                                placeholder="Describe yourself..."
-                                                className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all resize-none placeholder-neutral-700"
-                                            />
+                                    {/* Section 1: Personal Details */}
+                                    <section>
+                                        <div className="flex items-center gap-2 mb-6">
+                                            <div className="p-1.5 rounded bg-blue-500/10 text-blue-400"><User className="w-4 h-4" /></div>
+                                            <h3 className="text-sm font-bold uppercase tracking-wider text-neutral-300">Personal Details</h3>
                                         </div>
-                                    </div>
+
+                                        <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-6 md:p-8 space-y-6">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                <ModernInput label="Full Name" name="name" value={formData.name} onChange={handleChange} placeholder="e.g. Rahul Sharma" />
+                                                <ModernInput label="Job Title" name="role" value={formData.role} onChange={handleChange} placeholder="e.g. Head of Growth" />
+                                            </div>
+                                            <ModernInput label="Email Address" name="email" value={formData.email} onChange={handleChange} placeholder="name@company.com" icon={Mail} />
+
+                                            <div>
+                                                <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2 ml-1">Bio & Context</label>
+                                                <textarea
+                                                    name="bio"
+                                                    value={formData.bio}
+                                                    onChange={handleChange}
+                                                    rows="4"
+                                                    placeholder="Briefly describe your role and expertise. The AI uses this to personalize your tone."
+                                                    className="w-full bg-[#0F0F0F] border border-white/5 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all resize-none placeholder-neutral-700"
+                                                />
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    {/* Section 2: Professional Brand */}
+                                    <section>
+                                        <div className="flex items-center gap-2 mb-6">
+                                            <div className="p-1.5 rounded bg-purple-500/10 text-purple-400"><Building className="w-4 h-4" /></div>
+                                            <h3 className="text-sm font-bold uppercase tracking-wider text-neutral-300">Professional Brand</h3>
+                                        </div>
+
+                                        <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-6 md:p-8 space-y-6">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                <ModernInput label="Company Name" name="company" value={formData.company} onChange={handleChange} placeholder="e.g. Spacerocket" icon={Building} />
+                                                <ModernInput label="Website" name="website" value={formData.website} onChange={handleChange} placeholder="https://..." icon={Globe} />
+                                            </div>
+
+                                            <div className="pt-4 border-t border-white/5">
+                                                <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider mb-4">Social Presence</label>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <SocialInput label="LinkedIn" name="social_linkedin" value={formData.socials.linkedin} onChange={handleChange} icon={Linkedin} color="group-hover:text-[#0077b5]" />
+                                                    <SocialInput label="Twitter" name="social_twitter" value={formData.socials.twitter} onChange={handleChange} icon={Twitter} color="group-hover:text-[#1DA1F2]" />
+                                                    <SocialInput label="GitHub" name="social_github" value={formData.socials.github} onChange={handleChange} icon={Github} color="group-hover:text-white" />
+                                                    <SocialInput label="Instagram" name="social_instagram" value={formData.socials.instagram} onChange={handleChange} icon={Instagram} color="group-hover:text-[#E1306C]" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
+
                                 </div>
-
-                                {/* 2. Social Presence */}
-                                <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-8">
-                                    <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
-                                        <Globe className="w-5 h-5 text-purple-500" />
-                                        Social Presence
-                                    </h3>
-
-                                    <div className="space-y-4">
-                                        <SocialInput label="LinkedIn Profile" name="social_linkedin" value={formData.socials.linkedin} onChange={handleChange} icon={Linkedin} color="text-blue-400" />
-                                        <SocialInput label="Twitter / X" name="social_twitter" value={formData.socials.twitter} onChange={handleChange} icon={Twitter} color="text-sky-400" />
-                                        <SocialInput label="GitHub" name="social_github" value={formData.socials.github} onChange={handleChange} icon={Github} color="text-white" />
-                                        <SocialInput label="Instagram" name="social_instagram" value={formData.socials.instagram} onChange={handleChange} icon={Instagram} color="text-pink-400" />
-                                        <SocialInput label="Website / Portfolio" name="website" value={formData.website} onChange={handleChange} icon={LinkIcon} color="text-emerald-400" />
-                                    </div>
-                                </div>
-
                             </div>
+
                         </div>
                     )}
                 </div>
@@ -227,15 +273,16 @@ export default function Profile() {
     );
 }
 
-// --- Reusable Components (Keep these exactly as they are) ---
-const InputField = ({ label, name, value, onChange, placeholder, icon: Icon }) => (
-    <div>
-        <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2">
+// --- Modern Components ---
+
+const ModernInput = ({ label, name, value, onChange, placeholder, icon: Icon }) => (
+    <div className="relative group">
+        <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5 ml-1 group-focus-within:text-blue-500 transition-colors">
             {label}
         </label>
-        <div className="relative group">
+        <div className="relative">
             {Icon && (
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                     <Icon className="h-4 w-4 text-neutral-600 group-focus-within:text-blue-500 transition-colors" />
                 </div>
             )}
@@ -245,16 +292,16 @@ const InputField = ({ label, name, value, onChange, placeholder, icon: Icon }) =
                 value={value}
                 onChange={onChange}
                 placeholder={placeholder}
-                className={`w-full bg-[#111] border border-white/10 rounded-xl py-2.5 text-sm text-white focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all placeholder-neutral-700 ${Icon ? 'pl-10 pr-4' : 'px-4'}`}
+                className={`w-full bg-[#0F0F0F] border border-white/5 rounded-2xl py-3 text-sm text-white focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all placeholder-neutral-700 hover:bg-[#141414] ${Icon ? 'pl-11 pr-4' : 'px-4'}`}
             />
         </div>
     </div>
 );
 
 const SocialInput = ({ label, name, value, onChange, icon: Icon, color }) => (
-    <div className="flex items-center gap-4 group">
-        <div className={`p-2.5 rounded-lg bg-[#111] border border-white/5 ${color} group-hover:border-white/10 transition-colors`}>
-            <Icon className="w-5 h-5" />
+    <div className="flex items-center gap-3 group p-1 rounded-xl transition-all duration-300 focus-within:bg-white/[0.02]">
+        <div className={`p-2.5 rounded-xl bg-[#0F0F0F] border border-white/5 text-neutral-500 ${color} transition-colors group-hover:scale-110 shadow-sm`}>
+            <Icon className="w-4 h-4" />
         </div>
         <div className="flex-1 relative">
             <input
@@ -262,12 +309,9 @@ const SocialInput = ({ label, name, value, onChange, icon: Icon, color }) => (
                 name={name}
                 value={value}
                 onChange={onChange}
-                placeholder={`https://${label.toLowerCase().replace(" ", "")}.com/...`}
-                className="w-full bg-transparent border-b border-white/10 py-2 text-sm text-white focus:outline-none focus:border-white/30 transition-all placeholder-neutral-700"
+                placeholder={`${label} URL...`}
+                className="w-full bg-transparent border-0 border-b border-transparent focus:border-white/10 py-2 text-sm text-neutral-300 focus:text-white focus:outline-none transition-all placeholder-neutral-700"
             />
-            <label className="absolute -top-2.5 left-0 text-[10px] text-neutral-500 uppercase tracking-wider">
-                {label}
-            </label>
         </div>
     </div>
 );

@@ -176,7 +176,7 @@ export default function OutreachChat() {
           <div className="flex-1 flex flex-col items-center justify-center p-6 relative z-10 animate-in fade-in duration-700">
 
             {/* --- 3D ROBOT VISUAL (High Quality Orange Robot) --- */}
-            <div className="mb-8 relative w-[450px] h-[450px] flex items-center justify-center -mt-20">
+            <div className="mb-8 relative w-full max-w-[300px] md:max-w-[450px] aspect-square flex items-center justify-center -mt-20">
               {/* Glow behind robot */}
               <div className="absolute inset-0 bg-orange-500/20 blur-[100px] rounded-full animate-pulse"></div>
 
@@ -246,7 +246,7 @@ export default function OutreachChat() {
             </div>
 
             {/* Chat Scroll Area */}
-            <div className="flex-1 overflow-y-auto px-4 md:px-20 pt-28 pb-6 space-y-6 custom-scrollbar scroll-smooth">
+            <div className="flex-1 overflow-y-auto px-4 md:px-20 pt-24 md:pt-28 pb-6 space-y-6 custom-scrollbar scroll-smooth">
               {messages.map((msg, i) => (
                 <div key={i} className={`flex w-full ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                   <div className={`flex flex-col max-w-2xl ${msg.role === "user" ? "items-end" : "items-start"}`}>
