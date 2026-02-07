@@ -23,7 +23,7 @@ except ImportError:
 
 
 @tool
-def duckduckgo_search(query: Annotated[str, "The search query to look up"]) -> str:
+async def duckduckgo_search(query: Annotated[str, "The search query to look up"]) -> str:
     """Search the web using DuckDuckGo.
     
     Use this tool when you need to find current information, news, articles, 
@@ -32,9 +32,14 @@ def duckduckgo_search(query: Annotated[str, "The search query to look up"]) -> s
     Args:
         query: The search query string
     """
+    import asyncio
     try:
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=5))
+        # Run blocking search in a thread
+        def _search():
+            with DDGS() as ddgs:
+                return list(ddgs.text(query, max_results=5))
+        
+        results = await asyncio.to_thread(_search)
         
         if not results:
             return f"No results found for query: {query}"
@@ -52,7 +57,7 @@ def duckduckgo_search(query: Annotated[str, "The search query to look up"]) -> s
 
 
 @tool
-def scrape_article(url: Annotated[str, "The URL of the article/profile to scrape"]) -> str:
+async def scrape_article(url: Annotated[str, "The URL of the article/profile to scrape"]) -> str:
     """Scrape and extract content from web articles, profiles, and repositories.
     
     Automatically detects the platform and uses the appropriate crawler:
@@ -66,6 +71,7 @@ def scrape_article(url: Annotated[str, "The URL of the article/profile to scrape
         url: Complete URL to scrape
     """
     from .formatters import format_github_data, format_linkedin_data, format_article_data, format_twitter_data
+    import asyncio
     
     try:
         parsed = urlparse(url)
@@ -88,7 +94,7 @@ def scrape_article(url: Annotated[str, "The URL of the article/profile to scrape
                             tweet_limit=30,
                             top_tweet_limit=5
                         )
-                        content = crawler.extract(username=username, user=dummy_user)
+                        content = await crawler.aextract(username=username, user=dummy_user)
                         if content:
                             return format_twitter_data(content)
                         return f"✅ Twitter profile @{username} scraped successfully"
@@ -99,7 +105,7 @@ def scrape_article(url: Annotated[str, "The URL of the article/profile to scrape
         elif 'linkedin.com' in domain and '/in/' in parsed.path.lower():
             logger.info("Using LinkedInCrawler")
             crawler = LinkedInCrawler()
-            content = crawler.extract(link=url, user=dummy_user)
+            content = await crawler.aextract(link=url, user=dummy_user)
             if content:
                 return format_linkedin_data(content)
             return f"✅ LinkedIn profile scraped successfully"
@@ -111,7 +117,7 @@ def scrape_article(url: Annotated[str, "The URL of the article/profile to scrape
                 username = match.group(1)
                 logger.info(f"Using GithubProfileCrawler for {username}")
                 crawler = GithubProfileCrawler(top_repo_limit=5)
-                content = crawler.extract(username=username, user=dummy_user)
+                content = await crawler.aextract(username=username, user=dummy_user)
                 if content:
                     return format_github_data(content)
                 return f"✅ GitHub profile {username} scraped successfully"
@@ -120,7 +126,7 @@ def scrape_article(url: Annotated[str, "The URL of the article/profile to scrape
         elif 'medium.com' in domain or 'towardsdatascience.com' in domain:
             logger.info("Using MediumCrawler")
             crawler = MediumCrawler()
-            content = crawler.extract(link=url, user=dummy_user)
+            content = await crawler.aextract(link=url, user=dummy_user)
             if content:
                 return format_article_data(content)
             return f"✅ Medium article scraped successfully"
@@ -128,18 +134,30 @@ def scrape_article(url: Annotated[str, "The URL of the article/profile to scrape
         # Fallback: CustomArticleCrawler
         logger.info("Using CustomArticleCrawler")
         crawler = CustomArticleCrawler()
-        content = crawler.extract(link=url, user=dummy_user)
+        content = await crawler.aextract(link=url, user=dummy_user)
         if content:
             return format_article_data(content)
         return f"✅ Article scraped successfully from {url}"
+
         
     except Exception as e:
         logger.error(f"Error scraping {url}: {e}")
-        return f"❌ Error scraping {url}: {str(e)}"
+        error_msg = str(e)
+        
+        # Fallback: If scraping fails (especially for social media), try searching for the profile
+        fallback_query = f"{url} profile information"
+        logger.info(f"Scraping failed, falling back to search: {fallback_query}")
+        
+        try:
+            # Fix: Invoke the tool properly
+            search_results = await duckduckgo_search.ainvoke({"query": fallback_query})
+            return f"❌ Error scraping {url}: {error_msg}\n\n⚠️ FALLBACK: Here is what I found via search:\n\n{search_results}"
+        except Exception as search_error:
+            return f"❌ Error scraping {url}: {error_msg}\n\n(Fallback search also failed: {search_error})"
 
 
 @tool
-def generate_email(
+async def generate_email(
     recipient_name: str,
     company: str,
     purpose: str,
@@ -185,9 +203,10 @@ Make the email highly personalized, relevant to the company and purpose. Keep it
 Include a clear call-to-action. Sign off as "[Your Name]" at the end."""
 
     try:
+        from ml.settings import settings
         # Use Ollama to generate the email
-        llm = ChatOllama(model="qwen2.5:7b", temperature=0.7)
-        response = llm.invoke(prompt)
+        llm = ChatOllama(model=settings.LLM_MODEL, temperature=0.7)
+        response = await llm.ainvoke(prompt)
         
         logger.info(f"generate_email returning AI-generated email for {recipient_name} at {company}")
         # Return the generated content
@@ -211,5 +230,60 @@ Best regards,
 EMAIL_DRAFT_END"""
 
 
+@tool
+async def wikipedia_search(query: Annotated[str, "The topic to search on Wikipedia"]) -> str:
+    """Search for a topic on Wikipedia and return a summary.
+    
+    Use this tool to find detailed definitions, historical context, or general knowledge
+    about a specific topic, person, place, or event.
+    
+    Args:
+        query: The topic to search for
+    """
+    import asyncio
+    import wikipedia
+    
+    try:
+        # Run blocking search in a thread
+        def _wiki_search():
+            # Set language to English
+            wikipedia.set_lang("en")
+            # Search for the page
+            search_results = wikipedia.search(query)
+            if not search_results:
+                return None
+            
+            # Get the summary of the first result
+            try:
+                page = wikipedia.page(search_results[0], auto_suggest=False)
+                return {
+                    "title": page.title,
+                    "summary": page.summary[:1000] + "...",  # Truncate to avoid context limit issues
+                    "url": page.url
+                }
+            except wikipedia.DisambiguationError as e:
+                return {"error": "disambiguation", "options": e.options[:5]}
+            except wikipedia.PageError:
+                return None
+        
+        result = await asyncio.to_thread(_wiki_search)
+        
+        if not result:
+            return f"No Wikipedia results found for: {query}"
+        
+        if "error" in result and result["error"] == "disambiguation":
+            return f"Topic '{query}' is ambiguous. Did you mean:\n- " + "\n- ".join(result["options"])
+            
+        output = f"**Wikipedia Summary: {result['title']}**\n\n"
+        output += f"{result['summary']}\n\n"
+        output += f"Source: {result['url']}"
+        
+        logger.info(f"wikipedia_search returning summary for: {result['title']}")
+        return output
+        
+    except Exception as e:
+        logger.error(f"Wikipedia search failed: {e}")
+        return f"Error searching Wikipedia: {str(e)}"
+
 # List of all available tools
-TOOLS = [duckduckgo_search, scrape_article, generate_email]
+TOOLS = [duckduckgo_search, scrape_article, generate_email, wikipedia_search]

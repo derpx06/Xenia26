@@ -19,6 +19,8 @@ dependencies = [
     "sentence-transformers",
     "opik",
     "loguru",
+    'twikit',
+    'linkedin-api',
     "pydantic",
     "python-dotenv",
     "qdrant-client",
@@ -30,4 +32,10 @@ dependencies = [
     "html2text",
     "beautifulsoup4>=4.14.3",
     "duckduckgo-search",
+    "wikipedia>=1.4.0",
+]
+
+[dependency-groups]
+dev = [
+    "langgraph-cli[inmem]>=0.4.12",
 ]

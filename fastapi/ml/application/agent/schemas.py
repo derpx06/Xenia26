@@ -4,14 +4,21 @@ from pydantic import BaseModel, Field
 
 class Message(BaseModel):
     """Single message in conversation history."""
-    role: Literal["user", "assistant", "system"]
+    role: Literal["user", "assistant", "system", "tool"]
     content: str
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    tool_call_id: Optional[str] = None
+    name: Optional[str] = None
+    id: Optional[str] = None
+
+
+from ml.settings import settings
 
 
 class AgentRequest(BaseModel):
     """Request schema for agent chat endpoint."""
     message: str = Field(..., description="User's message to the agent")
-    model: str = Field(default="qwen2.5:7b", description="Ollama model to use")
+    model: str = Field(default=settings.LLM_MODEL, description="Ollama model to use")
     conversation_history: List[Message] = Field(
         default_factory=list,
         description="Previous conversation messages for context"

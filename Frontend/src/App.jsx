@@ -43,8 +43,7 @@ const App = () => {
           <Route path="/contacts" element={<ContactBook />} />
 
 
-          {/* ✅ 2. Replace placeholder with the actual Dashboard component */}
-          <Route path="/dashboard" element={<Dashboard />} />
+
         </Routes>
       </div>
     </div>

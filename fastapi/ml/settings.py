@@ -14,6 +14,7 @@ class Settings:
     
     def __init__(self):
         # Model settings
+        self.LLM_MODEL = os.getenv("LLM_MODEL", "qwen2.5:3b-instruct")
         self.model_name = os.getenv("MODEL_NAME", "gemma3:4b")
         self.embedding_model = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
         self.TEXT_EMBEDDING_MODEL_ID = os.getenv("TEXT_EMBEDDING_MODEL_ID", "sentence-transformers/all-MiniLM-L6-v2")
@@ -25,8 +26,9 @@ class Settings:
         self.DATABASE_NAME = os.getenv("DATABASE_NAME", "ml_database")
         
         # LinkedIn settings (optional - for automated login)
-        self.LINKEDIN_USERNAME = os.getenv("LINKEDIN_USERNAME")
-        self.LINKEDIN_PASSWORD = os.getenv("LINKEDIN_PASSWORD")
+        # LinkedIn settings (optional - for automated login)
+        self.LINKEDIN_USERNAME = os.getenv("LINKEDIN_USERNAME", "xeniasampleuser@gmail.com")
+        self.LINKEDIN_PASSWORD = os.getenv("LINKEDIN_PASSWORD", "xeniaUserPassword")
         self.LINKEDIN_HEADLESS = os.getenv("LINKEDIN_HEADLESS", "false").lower() == "true"
         
         # OpenAI settings
