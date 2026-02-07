@@ -1,6 +1,6 @@
 import React from "react";
-// 1. Added 'User' icon to imports
-import { LayoutDashboard, Send, BarChart3, Settings, LogOut, User } from "lucide-react";
+// 1. Added 'BookUser' and 'ScanFace' to imports for the new pages
+import { LayoutDashboard, Send, BarChart3, Settings, LogOut, User, BookUser, ScanFace } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 
 const NavItem = ({ icon: Icon, label, to }) => {
@@ -37,14 +37,16 @@ export default function Sidebar() {
         <span className="font-bold text-lg">OutreachAI</span>
       </div>
 
-      <nav className="flex-1 p-4 space-y-2">
+      <nav className="flex-1 p-4 space-y-2 overflow-y-auto custom-scrollbar">
         <NavItem icon={LayoutDashboard} label="Overview" to="/dashboard" />
         <NavItem icon={Send} label="Outreach" to="/outreach" />
+
+        {/* --- NEW LINKS ADDED HERE --- */}
+        <NavItem icon={BookUser} label="Contact Book" to="/contacts" />
+
+
         <NavItem icon={BarChart3} label="Analytics" to="/analytics" />
-
-        {/* 2. Added Profile Link Here */}
         <NavItem icon={User} label="Profile" to="/profile" />
-
         <NavItem icon={Settings} label="Settings" to="/settings" />
       </nav>
 

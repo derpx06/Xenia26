@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const connectDB = require("./config/db");
 const authRoutes = require("./routes/auth");
+const contactRoutes = require('./routes/contacts');
 
 const app = express();
 
@@ -18,6 +19,10 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 app.use("/api/auth", authRoutes);
+
+app.use('/api/contacts', contactRoutes);
+const sendRoute = require("./routes/send");
+app.use("/api/send", sendRoute);
 
 // Test route
 app.get("/", (req, res) => {
