@@ -88,7 +88,7 @@ const StreamSession = ({
 };
 
 // Default values for the form
-const DEFAULT_API_URL = "http://localhost:2024";
+const DEFAULT_API_URL = "http://localhost:8000";
 const DEFAULT_ASSISTANT_ID = "agent";
 
 export const StreamProvider = ({
@@ -100,10 +100,10 @@ export const StreamProvider = ({
 
     // Use URL params with env var fallbacks
     const [apiUrl, setApiUrl] = useQueryState("apiUrl", {
-        defaultValue: envApiUrl || "",
+        defaultValue: envApiUrl || DEFAULT_API_URL,
     });
     const [assistantId, setAssistantId] = useQueryState("assistantId", {
-        defaultValue: envAssistantId || "",
+        defaultValue: envAssistantId || DEFAULT_ASSISTANT_ID,
     });
 
     // For API key, use localStorage with env var fallback
@@ -117,9 +117,9 @@ export const StreamProvider = ({
         _setApiKey(key);
     };
 
-    // Determine final values to use, prioritizing URL params then env vars
-    const finalApiUrl = apiUrl || envApiUrl;
-    const finalAssistantId = assistantId || envAssistantId;
+    // Determine final values to use, prioritizing URL params then env vars then defaults
+    const finalApiUrl = apiUrl || envApiUrl || DEFAULT_API_URL;
+    const finalAssistantId = assistantId || envAssistantId || DEFAULT_ASSISTANT_ID;
 
     // Show the form if we: don't have an API URL, or don't have an assistant ID
     if (!finalApiUrl || !finalAssistantId) {

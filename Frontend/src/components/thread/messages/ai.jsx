@@ -139,38 +139,36 @@ export function AssistantMessage({
                     </>
                 ) : (
                     <>
-                        {thoughts.length > 0 && (
-                            <div className="flex flex-col gap-2 p-4 bg-zinc-900/50 border border-zinc-800 rounded-2xl shadow-sm italic text-zinc-400 text-sm animate-in fade-in duration-700">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <div className="size-1.5 bg-indigo-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
-                                    <span className="text-[10px] font-black uppercase tracking-widest not-italic text-zinc-500">Agent Reasoning</span>
-                                </div>
-                                {thoughts.map((t, i) => (
-                                    <MarkdownText key={i}>{t.thought || t.text || ""}</MarkdownText>
-                                ))}
+                        {(thoughts.length > 0 || hasToolCalls || hasAnthropicToolCalls) && (
+                            <div className="flex flex-col gap-2 p-4 bg-zinc-900/50 border border-zinc-800 rounded-2xl shadow-sm max-h-[300px] overflow-y-auto animate-in fade-in duration-700 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent">
+                                {thoughts.length > 0 && (
+                                    <div className="flex flex-col gap-2 mb-2">
+                                        <div className="flex items-center gap-2 mb-1 sticky top-0 bg-zinc-900/95 backdrop-blur-sm py-1 z-10 w-full">
+                                            <div className="size-1.5 bg-indigo-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
+                                            <span className="text-[10px] font-black uppercase tracking-widest not-italic text-zinc-500">Agent Process</span>
+                                        </div>
+                                        <div className="italic text-zinc-400 text-sm pl-2 border-l-2 border-zinc-800">
+                                            {thoughts.map((t, i) => (
+                                                <MarkdownText key={i}>{t.thought || t.text || ""}</MarkdownText>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {!(hideToolCalls === "true" || hideToolCalls === true) && (
+                                    <>
+                                        {(hasToolCalls && toolCallsHaveContents && (
+                                            <ToolCalls toolCalls={message.tool_calls} />
+                                        )) ||
+                                            (hasAnthropicToolCalls && (
+                                                <ToolCalls toolCalls={anthropicStreamedToolCalls} />
+                                            )) ||
+                                            (hasToolCalls && (
+                                                <ToolCalls toolCalls={message.tool_calls} />
+                                            ))}
+                                    </>
+                                )}
                             </div>
-                        )}
-
-                        {contentString.length > 0 && (
-                            <div className="py-1 prose prose-invert prose-zinc prose-sm max-w-none text-zinc-300 leading-relaxed">
-                                <MarkdownText>{contentString}</MarkdownText>
-                            </div>
-                        )}
-
-                        {hasEmailDraft && <EmailCard content={fullContent} />}
-
-                        {!(hideToolCalls === "true" || hideToolCalls === true) && (
-                            <>
-                                {(hasToolCalls && toolCallsHaveContents && (
-                                    <ToolCalls toolCalls={message.tool_calls} />
-                                )) ||
-                                    (hasAnthropicToolCalls && (
-                                        <ToolCalls toolCalls={anthropicStreamedToolCalls} />
-                                    )) ||
-                                    (hasToolCalls && (
-                                        <ToolCalls toolCalls={message.tool_calls} />
-                                    ))}
-                            </>
                         )}
 
                         <CustomComponent

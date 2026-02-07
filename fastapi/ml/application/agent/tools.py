@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 import re
 
 from langchain_core.tools import tool
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 from loguru import logger
 from ml.application.crawlers.dispatcher import CrawlerDispatcher
 from ml.application.crawlers.linkedin import LinkedInCrawler
