@@ -31,7 +31,7 @@ dependencies = [
     "brotli",
     "html2text",
     "beautifulsoup4>=4.14.3",
-    "duckduckgo-search",
+    "ddgs",
     "wikipedia>=1.4.0",
 ]
 
