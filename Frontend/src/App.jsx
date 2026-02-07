@@ -39,10 +39,6 @@ const App = () => {
           <Route path="/outreach" element={<OutreachChat />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/Analytics" element={<Analytics />} />
-
-
-          {/* ✅ 2. Replace placeholder with the actual Dashboard component */}
-          <Route path="/dashboard" element={<Dashboard />} />
         </Routes>
       </div>
     </div>

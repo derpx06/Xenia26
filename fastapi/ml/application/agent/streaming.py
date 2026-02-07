@@ -6,12 +6,14 @@ from typing import AsyncGenerator
 from loguru import logger
 
 from .schemas import AgentStreamChunk
-from .graph import stream_agent
+from .graph import stream_agent_events
 
+
+from ml.settings import settings
 
 async def stream_agent_response(
     message: str,
-    model: str = "qwen2.5:7b",
+    model: str = settings.LLM_MODEL,
     conversation_history: list = None,
     max_iterations: int = 10
 ) -> AsyncGenerator[str, None]:
@@ -37,96 +39,79 @@ async def stream_agent_response(
         tool_calls_made = []
         accumulated_content = ""
         last_event_type = None
-        
-        async for event in stream_agent(message, model, conversation_history, max_iterations):
-            logger.debug(f"Agent event: {event.keys()}")
+        async for event in stream_agent_events(message, model, conversation_history, max_iterations):
+            event_type = event.get("event")
             
-            # Process agent node events
-            if "agent" in event:
-                agent_output = event["agent"]
-                messages = agent_output.get("messages", [])
-                
-                # Emit thinking indicator when agent starts processing
-                if last_event_type != "agent":
+            # Handle agent node start (thinking)
+            if event_type == "on_chain_start":
+                name = event.get("name")
+                if name == "agent":
+                    iteration_count += 1
                     chunk = AgentStreamChunk(
                         type="thought",
-                        content="Agent is thinking..."
+                        content=f"Agent is thinking (iteration {iteration_count})..."
                     )
                     yield f"data: {chunk.model_dump_json()}\n\n"
-                    last_event_type = "agent"
-                
-                if messages:
-                    last_message = messages[-1]
-                    
-                    # Check for tool calls
-                    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-                        for tool_call in last_message.tool_calls:
-                            tool_name = tool_call.get("name", "unknown")
-                            tool_input = tool_call.get("args", {})
-                            
-                            logger.info(f"Tool call: {tool_name} with args: {tool_input}")
-                            
-                            tool_calls_made.append({
-                                "name": tool_name,
-                                "input": tool_input
-                            })
-                            
-                            chunk = AgentStreamChunk(
-                                type="tool_call",
-                                content=f"Calling {tool_name}...",
-                                tool_name=tool_name,
-                                tool_input=tool_input
-                            )
-                            yield f"data: {chunk.model_dump_json()}\n\n"
-                    
-                    # Stream agent content incrementally
-                    elif hasattr(last_message, "content") and last_message.content:
-                        content = str(last_message.content)
-                        
-                        # Send full content if it's new or changed
-                        if content and content != accumulated_content:
-                            # Calculate delta
-                            if content.startswith(accumulated_content):
-                                new_content = content[len(accumulated_content):]
-                            else:
-                                new_content = content
-                            
-                            accumulated_content = content
-                            
-                            logger.debug(f"Streaming content delta: {len(new_content)} chars")
-                            
-                            chunk = AgentStreamChunk(
-                                type="response",
-                                content=new_content
-                            )
-                            yield f"data: {chunk.model_dump_json()}\n\n"
-                
-                iteration_count = agent_output.get("iterations", iteration_count)
             
-            # Process tool node events
-            elif "tools" in event:
-                tool_output = event["tools"]
-                messages = tool_output.get("messages", [])
+            # Handle token streaming from LLM
+            elif event_type == "on_chat_model_stream":
+                data = event.get("data", {})
+                chunk_content = data.get("chunk", {}).content
                 
-                logger.info(f"Tool results received: {len(messages)} messages")
+                if chunk_content:
+                    accumulated_content += chunk_content
+                    # Send token chunk
+                    chunk = AgentStreamChunk(
+                        type="response",
+                        content=chunk_content
+                    )
+                    yield f"data: {chunk.model_dump_json()}\n\n"
+            
+            # Handle tool execution start
+            elif event_type == "on_tool_start":
+                data = event.get("data", {})
+                tool_name = event.get("name")
+                tool_input = data.get("input")
                 
-                if messages:
-                    for msg in messages:
-                        if hasattr(msg, "content"):
-                            tool_name = getattr(msg, "name", "unknown")
-                            
-                            logger.debug(f"Tool {tool_name} completed")
-                            
-                            chunk = AgentStreamChunk(
-                                type="tool_result",
-                                content=f"✓ {tool_name} completed",
-                                tool_name=tool_name,
-                                tool_output=str(msg.content)[:500]
-                            )
-                            yield f"data: {chunk.model_dump_json()}\n\n"
+                # Filter out system tools or internal calls if any
+                if tool_name and tool_name not in ["agent", "tools"]:
+                    logger.info(f"Tool call detected: {tool_name}")
+                    
+                    tool_calls_made.append({
+                        "name": tool_name,
+                        "input": tool_input
+                    })
+                    
+                    chunk = AgentStreamChunk(
+                        type="tool_call",
+                        content=f"Calling {tool_name}...",
+                        tool_name=tool_name,
+                        tool_input=tool_input
+                    )
+                    yield f"data: {chunk.model_dump_json()}\n\n"
+            
+            # Handle tool execution result
+            elif event_type == "on_tool_end":
+                data = event.get("data", {})
+                tool_name = event.get("name")
+                tool_output = data.get("output")
                 
-                last_event_type = "tools"
-        
+                if tool_name and tool_name not in ["agent", "tools"]:
+                    logger.debug(f"Tool completed: {tool_name}")
+                    
+                    # Format output string safely
+                    output_str = str(tool_output)
+                    if len(output_str) > 500:
+                        output_str = output_str[:500] + "..."
+                    
+                    chunk = AgentStreamChunk(
+                        type="tool_result",
+                        content=f"✓ {tool_name} finished",
+                        tool_name=tool_name,
+                        tool_output=output_str
+                    )
+                    yield f"data: {chunk.model_dump_json()}\n\n"
+
         # Send completion signal
         chunk = AgentStreamChunk(
             type="done",

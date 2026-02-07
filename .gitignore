@@ -84,6 +84,7 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+agent-chat-ui/
 # ============================================
 # Testing
 # ============================================
@@ -118,4 +119,4 @@ data/
 # ============================================
 # package-lock.json
 # yarn.lock
-# pnpm-lock.yaml
+# pnpm-lock.yamlagent-chat-ui/

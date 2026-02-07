@@ -20,6 +20,11 @@ class BaseCrawler(ABC):
     @abstractmethod
     def extract(self, link: str, **kwargs) -> None: ...
 
+    async def aextract(self, link: str, **kwargs) -> None:
+        """Async version of extract. Default implementation delegates to extract in a thread."""
+        import asyncio
+        return await asyncio.to_thread(self.extract, link, **kwargs)
+
 
 class BaseSeleniumCrawler(BaseCrawler, ABC):
     def __init__(self, scroll_limit: int = 5) -> None:

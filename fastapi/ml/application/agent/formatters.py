@@ -62,7 +62,7 @@ def format_article_data(content: Dict[str, Any]) -> str:
         result += f"**Subtitle:** {content.get('Subtitle')}\n\n"
     
     if content.get('Content'):
-        result += f"## Content\n{content.get('Content')[:1000]}...\n\n"
+        result += f"## Content\n{content.get('Content')}\n\n"
     
     return result
 
@@ -85,6 +85,6 @@ def format_twitter_data(content: Dict[str, Any]) -> str:
         result += f"## Top Tweets\n"
         for tweet in top_tweets[:3]:
             result += f"\n❤️ {tweet.get('favorite_count', 0):,} | 🔁 {tweet.get('retweet_count', 0):,}\n"
-            result += f"{tweet.get('text', '')[:200]}...\n"
+            result += f"{tweet.get('text', '')}\n"
     
     return result
