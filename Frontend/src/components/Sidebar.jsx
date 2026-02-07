@@ -42,7 +42,7 @@ export default function Sidebar() {
         <NavItem icon={Send} label="Outreach" to="/outreach" />
 
         {/* --- NEW LINKS ADDED HERE --- */}
-        <NavItem icon={BookUser} label="Contact Book" to="/contacts" />
+        {/* <NavItem icon={BookUser} label="Contact Book" to="/contacts" />*/}
 
 
         <NavItem icon={BarChart3} label="Analytics" to="/analytics" />

@@ -1,28 +1,17 @@
 import React, { useState, useEffect } from "react";
 import {
-    User,
-    Mail,
-    Building,
-    Globe,
-    Save,
-    Shield,
-    Key,
-    LogOut,
-    Camera,
-    Loader2,
-    Linkedin,
-    Twitter,
-    Github,
-    Instagram,
-    Link as LinkIcon
+    User, Mail, Building, Globe, Save, Shield, Key, LogOut, Camera, Loader2,
+    Linkedin, Twitter, Github, Instagram, Link as LinkIcon
 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
+
+const BACKEND_URL = "http://localhost:8080/api";
 
 export default function Profile() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
-    // 1. Initialize State with Empty Values (Dynamic)
+    // 1. Initialize State
     const [formData, setFormData] = useState({
         name: "",
         email: "",
@@ -38,33 +27,40 @@ export default function Profile() {
         }
     });
 
-    // 2. Load Data from "Database" (LocalStorage for Prototype)
+    // 2. Load Real Data from Backend on Mount
     useEffect(() => {
-        // Simulate API Fetch delay
-        setTimeout(() => {
-            const savedProfile = localStorage.getItem("userProfile");
-            const sessionUser = localStorage.getItem("user"); // From Login
+        const fetchProfile = async () => {
+            const userEmail = localStorage.getItem("userEmail");
+            if (!userEmail) {
+                setLoading(false);
+                return;
+            }
 
-            if (savedProfile) {
-                setFormData(JSON.parse(savedProfile));
-            } else if (sessionUser) {
-                // Fallback to session data if no profile exists yet
-                const parsedSession = JSON.parse(sessionUser);
+            try {
+                // Since we don't have a GET route yet, we'll try to sync with LocalStorage first
+                // OR ideally, add a GET route. For now, we load what we know:
                 setFormData(prev => ({
                     ...prev,
-                    name: parsedSession.name || "User",
-                    email: parsedSession.email || ""
+                    email: userEmail,
+                    name: localStorage.getItem("userName") || "",
+                    company: localStorage.getItem("userCompany") || "",
+                    role: localStorage.getItem("userRole") || ""
                 }));
+                // (In a full app, you would fetch GET /api/user/profile/${userEmail} here)
+            } catch (error) {
+                console.error("Error loading profile:", error);
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
-        }, 600);
+        };
+
+        fetchProfile();
     }, []);
 
     // Handle Text Inputs
     const handleChange = (e) => {
         const { name, value } = e.target;
         if (name.startsWith("social_")) {
-            // Handle nested social object updates
             const socialKey = name.replace("social_", "");
             setFormData(prev => ({
                 ...prev,
@@ -75,19 +71,44 @@ export default function Profile() {
         }
     };
 
-    // Handle Save (Persist to LocalStorage)
-    const handleSave = () => {
+    // Handle Save (REAL BACKEND CALL)
+    const handleSave = async () => {
         setSaving(true);
-        // Simulate API Call
-        setTimeout(() => {
-            localStorage.setItem("userProfile", JSON.stringify(formData));
-            // Also update the main session user if name changed
-            const currentSession = JSON.parse(localStorage.getItem("user") || "{}");
-            localStorage.setItem("user", JSON.stringify({ ...currentSession, name: formData.name }));
+        try {
+            const userEmail = localStorage.getItem("userEmail");
 
+            const response = await fetch(`${BACKEND_URL}/user/profile`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ...formData, email: userEmail })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                // 1. Update individual items
+                localStorage.setItem("userName", formData.name);
+                localStorage.setItem("userCompany", formData.company);
+                localStorage.setItem("userRole", formData.role);
+
+                // ✅ 2. ALSO Update the main 'user' object (used by Sidebar)
+                const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
+                const updatedUser = { ...currentUser, name: formData.name };
+                localStorage.setItem("user", JSON.stringify(updatedUser));
+
+                // ✅ 3. DISPATCH EVENT: Tell the Sidebar to refresh immediately
+                window.dispatchEvent(new Event("userUpdated"));
+
+                alert("✅ Profile Saved Successfully!");
+            } else {
+                alert(`❌ Error: ${data.message}`);
+            }
+        } catch (error) {
+            console.error(error);
+            alert("Failed to connect to server.");
+        } finally {
             setSaving(false);
-            alert("Profile Saved Successfully!"); // Replace with Toast in real app
-        }, 1000);
+        }
     };
 
     return (
@@ -107,7 +128,7 @@ export default function Profile() {
                                 Configure the identity your AI agent will use for outreach.
                             </p>
                         </div>
-                        {/* Save Button (Top Right) */}
+                        {/* Save Button */}
                         <button
                             onClick={handleSave}
                             disabled={saving || loading}
@@ -134,11 +155,6 @@ export default function Profile() {
                                         <div className="w-28 h-28 rounded-full bg-[#111] border-4 border-[#0A0A0A] flex items-center justify-center text-3xl font-bold text-neutral-300 shadow-2xl overflow-hidden relative">
                                             {/* Dynamic Initials */}
                                             {formData.name ? formData.name.split(" ").map(n => n[0]).join("").substring(0, 2).toUpperCase() : <User />}
-
-                                            {/* Hover Overlay */}
-                                            <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <Camera className="w-6 h-6 text-white" />
-                                            </div>
                                         </div>
                                     </div>
 
@@ -150,27 +166,6 @@ export default function Profile() {
                                             <span>Plan Status</span>
                                             <span className="text-emerald-400 font-medium bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">PRO</span>
                                         </div>
-                                        <div className="flex justify-between text-xs text-neutral-400 py-3 border-b border-white/5">
-                                            <span>Outreach Credits</span>
-                                            <span className="text-white font-medium">850 / 1000</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Security Actions */}
-                                <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-6">
-                                    <h4 className="font-medium text-sm text-neutral-300 flex items-center gap-2 mb-4">
-                                        <Shield className="w-4 h-4" /> Account Security
-                                    </h4>
-                                    <div className="space-y-2">
-                                        <button className="w-full text-left text-xs text-neutral-400 hover:text-white hover:bg-white/5 p-2.5 rounded-lg transition-colors flex items-center justify-between group">
-                                            Update Password
-                                            <Key className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                        </button>
-                                        <button className="w-full text-left text-xs text-red-400 hover:bg-red-500/10 p-2.5 rounded-lg transition-colors flex items-center justify-between">
-                                            Sign Out
-                                            <LogOut className="w-3 h-3" />
-                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -200,64 +195,26 @@ export default function Profile() {
                                                 value={formData.bio}
                                                 onChange={handleChange}
                                                 rows="4"
-                                                placeholder="Describe yourself, your writing style, and what you sell. The AI will read this to match your tone."
+                                                placeholder="Describe yourself..."
                                                 className="w-full bg-[#111] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all resize-none placeholder-neutral-700"
                                             />
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* 2. Social Presence (NEW SECTION) */}
+                                {/* 2. Social Presence */}
                                 <div className="bg-[#0A0A0A] border border-white/5 rounded-2xl p-8">
                                     <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
                                         <Globe className="w-5 h-5 text-purple-500" />
                                         Social Presence
                                     </h3>
-                                    <p className="text-xs text-neutral-500 mb-6">
-                                        Add your profiles so the AI can learn from your public posts (Optional).
-                                    </p>
 
                                     <div className="space-y-4">
-                                        <SocialInput
-                                            label="LinkedIn Profile"
-                                            name="social_linkedin"
-                                            value={formData.socials.linkedin}
-                                            onChange={handleChange}
-                                            icon={Linkedin}
-                                            color="text-blue-400"
-                                        />
-                                        <SocialInput
-                                            label="Twitter / X"
-                                            name="social_twitter"
-                                            value={formData.socials.twitter}
-                                            onChange={handleChange}
-                                            icon={Twitter}
-                                            color="text-sky-400"
-                                        />
-                                        <SocialInput
-                                            label="GitHub"
-                                            name="social_github"
-                                            value={formData.socials.github}
-                                            onChange={handleChange}
-                                            icon={Github}
-                                            color="text-white"
-                                        />
-                                        <SocialInput
-                                            label="Instagram"
-                                            name="social_instagram"
-                                            value={formData.socials.instagram}
-                                            onChange={handleChange}
-                                            icon={Instagram}
-                                            color="text-pink-400"
-                                        />
-                                        <SocialInput
-                                            label="Website / Portfolio"
-                                            name="website"
-                                            value={formData.website}
-                                            onChange={handleChange}
-                                            icon={LinkIcon}
-                                            color="text-emerald-400"
-                                        />
+                                        <SocialInput label="LinkedIn Profile" name="social_linkedin" value={formData.socials.linkedin} onChange={handleChange} icon={Linkedin} color="text-blue-400" />
+                                        <SocialInput label="Twitter / X" name="social_twitter" value={formData.socials.twitter} onChange={handleChange} icon={Twitter} color="text-sky-400" />
+                                        <SocialInput label="GitHub" name="social_github" value={formData.socials.github} onChange={handleChange} icon={Github} color="text-white" />
+                                        <SocialInput label="Instagram" name="social_instagram" value={formData.socials.instagram} onChange={handleChange} icon={Instagram} color="text-pink-400" />
+                                        <SocialInput label="Website / Portfolio" name="website" value={formData.website} onChange={handleChange} icon={LinkIcon} color="text-emerald-400" />
                                     </div>
                                 </div>
 
@@ -270,8 +227,7 @@ export default function Profile() {
     );
 }
 
-// --- Reusable Components ---
-
+// --- Reusable Components (Keep these exactly as they are) ---
 const InputField = ({ label, name, value, onChange, placeholder, icon: Icon }) => (
     <div>
         <label className="block text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2">

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { 
-  Sparkles, User, Mail, Lock, ArrowRight, Eye, EyeOff, Shield, Zap, Database, ChevronLeft, AlertCircle 
+import {
+  Sparkles, User, Mail, Lock, ArrowRight, Eye, EyeOff, Shield, Zap, Database, ChevronLeft, AlertCircle
 } from "lucide-react";
 
 export default function RegisterPage() {
@@ -10,7 +10,7 @@ export default function RegisterPage() {
   const [focusedInput, setFocusedInput] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  
+
   const navigate = useNavigate();
 
   const getPasswordStrength = (pass) => {
@@ -19,7 +19,7 @@ export default function RegisterPage() {
     if (pass.length > 8) strength += 1;
     if (/[A-Z]/.test(pass)) strength += 1;
     if (/[0-9]/.test(pass)) strength += 1;
-    return strength; 
+    return strength;
   };
   const strength = getPasswordStrength(form.password);
 
@@ -43,7 +43,9 @@ export default function RegisterPage() {
 
       if (data.success) {
         // Redirect to Login on success
+
         navigate("/login");
+
       } else {
         setError(data.message || "Registration failed");
       }
@@ -62,12 +64,12 @@ export default function RegisterPage() {
         </div>
         <span className="font-medium">Back to Home</span>
       </Link>
-      
+
       {/* Left Side (Form) */}
       <div className="w-full lg:w-1/2 flex flex-col justify-center p-6 lg:p-12 relative z-10 border-r border-white/5">
         <div className="w-full max-w-[440px] mx-auto space-y-8 mt-12 lg:mt-0">
-           <div className="flex justify-center lg:justify-start mb-2">
-             <div className="flex items-center gap-3">
+          <div className="flex justify-center lg:justify-start mb-2">
+            <div className="flex items-center gap-3">
               <div className="size-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
                 <Sparkles className="w-5 h-5 text-white" />
               </div>
@@ -150,7 +152,7 @@ export default function RegisterPage() {
               <Sparkles className="w-3 h-3" />
               <span>Enterprise Grade Security</span>
             </div>
-            <h2 className="text-4xl font-bold text-white mb-4 leading-tight">Your Data. <br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">Your Hardware.</span></h2>
+            <h2 className="text-4xl font-bold text-white mb-4 leading-tight">Your Data. <br /><span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">Your Hardware.</span></h2>
             <p className="text-lg text-neutral-400">Join thousands of sales teams generating outreach on their own infrastructure.</p>
           </div>
           <div className="space-y-4">

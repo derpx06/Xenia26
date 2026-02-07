@@ -1,126 +1,86 @@
 import { useEffect, useRef, useState } from "react";
-import { Send, Sparkles, Wrench, Brain, CheckCircle, Mail, Phone, X, Bot, Loader2 } from "lucide-react";
+import { Send, Mail, Phone, X, Bot, Loader2, ArrowRight, Sparkles, Zap, MessageSquare, ChevronRight } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 
-// --- FRIEND'S ARCHITECTURE IMPORTS (Integrate these later) ---
+// --- FRIEND'S ARCHITECTURE IMPORTS ---
 import { Thread } from "../components/thread/Thread";
 import { StreamProvider } from "../providers/Stream";
 import { ThreadProvider } from "../providers/Thread";
 import { ArtifactProvider } from "../components/thread/artifact";
 
-const API_BASE_URL = "http://localhost:8000"; // Python AI Agent
-const BACKEND_API_URL = "http://localhost:8080/api"; // Node.js Backend
+const API_BASE_URL = "http://localhost:8000";
+const BACKEND_API_URL = "http://localhost:8080/api";
 
 export default function OutreachChat() {
-  // ==================================================================================
-  // YOUR WORKING LOGIC (The "Best" Part - Keeps Email/Backend working)
-  // ==================================================================================
+  // --- UI STATE ---
+  const [hasStarted, setHasStarted] = useState(false);
 
-  // --- STATE MANAGEMENT ---
+  // --- LOGIC STATE ---
   const [messages, setMessages] = useState([
     {
       role: "assistant",
       type: "text",
-      content: "I'm ready. Type **@** to select a contact from your book, or just ask me to research something.",
+      content: "Hello! I am Verve. I can help you draft emails, find contacts, or negotiate deals. How can I help you today?",
     },
   ]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [sendingEmail, setSendingEmail] = useState(false);
-
-  // Agent State
   const [streamingContent, setStreamingContent] = useState("");
-  const [currentStep, setCurrentStep] = useState(null);
-  const [toolCalls, setToolCalls] = useState([]);
-  const [showSteps, setShowSteps] = useState(true);
-
-  // Model & Data State
-  const [availableModels, setAvailableModels] = useState([]);
-  const [selectedModel, setSelectedModel] = useState("mistral:7b");
-  const [contacts, setContacts] = useState([]);
-  const [showMentionMenu, setShowMentionMenu] = useState(false);
-  const [selectedContact, setSelectedContact] = useState(null);
-
+  const [activeSendFlow, setActiveSendFlow] = useState(null);
+  const [loadingAction, setLoadingAction] = useState(false);
   const bottomRef = useRef(null);
 
-  // --- INITIALIZATION ---
-  useEffect(() => {
-    const fetchModels = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/ml/models`);
-        const data = await response.json();
-        setAvailableModels(data.models || []);
-      } catch (error) {
-        console.error("Error fetching models:", error);
-      }
-    };
-    const loadContacts = () => {
-      const saved = JSON.parse(localStorage.getItem('contacts') || '[]');
-      setContacts(saved);
-    };
-    fetchModels();
-    loadContacts();
-  }, []);
-
+  // Scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingContent, currentStep, toolCalls]);
+  }, [messages, streamingContent, activeSendFlow, hasStarted]);
 
-  // --- HANDLERS ---
-  const handleInputChange = (e) => {
-    const val = e.target.value;
-    setInput(val);
-    if (val.endsWith('@')) setShowMentionMenu(true);
-    else if (!val.includes('@')) setShowMentionMenu(false);
-  };
+  // --- ACTIONS (Email/WhatsApp) ---
+  const handleSendAction = async (msgIndex, content) => {
+    if (!activeSendFlow) return;
+    const target = activeSendFlow.value;
+    const type = activeSendFlow.type;
+    let cleanText = content.replace(/[*#_`]/g, '').trim();
 
-  const selectContact = (contact) => {
-    const newValue = input.replace(/@$/, `@${contact.name} `);
-    setInput(newValue);
-    setSelectedContact(contact);
-    setShowMentionMenu(false);
-  };
+    if (!target) return alert(`Please enter a ${type === 'email' ? 'valid email' : 'phone number'}`);
+    setLoadingAction(true);
 
-  // --- SENDING LOGIC (Real Email + WhatsApp Redirect) ---
-  const sendToPlatform = async (platform, text, targetContact) => {
-    const contact = targetContact || selectedContact;
-    if (!contact) return alert("Error: No contact context found.");
-    let cleanText = text.replace(/[*#_`]/g, '').trim();
-
-    if (platform === 'whatsapp') {
-      if (!contact.phone) return alert("No phone number saved!");
-      const cleanPhone = contact.phone.replace(/[^0-9]/g, '');
-      window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(cleanText)}`, '_blank');
-    }
-    else if (platform === 'email') {
-      if (!contact.email) return alert("No email saved!");
-      let subject = "Quick Question";
-      const subjectMatch = cleanText.match(/Subject:\s*(.+)/i);
-      if (subjectMatch) {
-        subject = subjectMatch[1].trim();
-        cleanText = cleanText.replace(/Subject:.*\n*/i, '').trim();
+    try {
+      if (type === 'whatsapp') {
+        const cleanPhone = target.replace(/[^0-9]/g, '');
+        const waLink = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(cleanText)}`;
+        window.open(waLink, '_blank');
+        setActiveSendFlow(null);
       }
-      try {
-        setSendingEmail(true);
+      else if (type === 'email') {
+        let subject = "Quick Question";
+        const subjectMatch = cleanText.match(/Subject:\s*(.+)/i);
+        if (subjectMatch) {
+          subject = subjectMatch[1].trim();
+          cleanText = cleanText.replace(/Subject:.*\n*/i, '').trim();
+        }
         const res = await fetch(`${BACKEND_API_URL}/send/email`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ to: contact.email, subject: subject, text: cleanText })
+          body: JSON.stringify({ to: target, subject: subject, text: cleanText })
         });
-        const data = await res.json();
-        if (res.ok) alert(`✅ Email sent successfully to ${contact.email}`);
-        else alert(`❌ Failed: ${data.message || "Unknown Error"}`);
-      } catch (err) {
-        console.error(err);
-        alert("Error connecting to server. Is Backend running on Port 5000?");
-      } finally {
-        setSendingEmail(false);
+        if (res.ok) {
+          alert(`✅ Email sent to ${target}!`);
+          setActiveSendFlow(null);
+        } else {
+          const data = await res.json();
+          alert(`❌ Failed: ${data.message}`);
+        }
       }
+    } catch (err) {
+      console.error(err);
+      alert("Error connecting to server.");
+    } finally {
+      setLoadingAction(false);
     }
   };
 
-  // --- CHAT AGENT LOGIC ---
   const sendMessage = async () => {
     if (!input.trim()) return;
     const originalInput = input;
@@ -128,41 +88,22 @@ export default function OutreachChat() {
     setInput("");
     setIsStreaming(true);
     setStreamingContent("");
-    setCurrentStep(null);
-    setToolCalls([]);
-
-    let aiPrompt = originalInput;
-    if (selectedContact) {
-      const cleanInput = originalInput.replace(/@\S+\s*/, '').trim();
-      aiPrompt = `
-You are an expert sales copywriter.
-TASK: Write a professional cold outreach email.
-RECIPIENT: ${selectedContact.name} (${selectedContact.role || "Professional"} at ${selectedContact.company || "Company"})
-REQUEST: "${cleanInput}"
-STRICT OUTPUT RULES:
-1. Start with a catchy "Subject: ..." line.
-2. Write the email body professionally.
-3. Do NOT use placeholders.
-`;
-    }
 
     try {
       const response = await fetch(`${API_BASE_URL}/ml/agent/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel,
-          message: aiPrompt,
-          conversation_history: messages.filter((m) => m.type === "text").map((m) => ({ role: m.role, content: m.content })),
-          max_iterations: 10,
+          model: "mistral:7b",
+          message: originalInput,
+          conversation_history: messages.map(m => ({ role: m.role, content: m.content })),
         }),
       });
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
       let assistantContent = "";
-      let currentRunToolCalls = [];
 
       while (true) {
         const { value, done } = await reader.read();
@@ -174,35 +115,15 @@ STRICT OUTPUT RULES:
           if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6));
-              if (data.type === "thought") {
-                setCurrentStep({ type: "thinking", content: "Agent is reasoning..." });
-              } else if (data.type === "tool_call") {
-                setCurrentStep({ type: "tool_call", toolName: data.tool_name, input: data.tool_input });
-                currentRunToolCalls.push({ name: data.tool_name, input: data.tool_input, status: "running" });
-                setToolCalls([...currentRunToolCalls]);
-              } else if (data.type === "tool_result") {
-                setCurrentStep({ type: "tool_complete", toolName: data.tool_name });
-                currentRunToolCalls = currentRunToolCalls.map(t => t.name === data.tool_name && t.status === "running" ? { ...t, status: "completed" } : t);
-                setToolCalls([...currentRunToolCalls]);
-              } else if (data.type === "response") {
-                setCurrentStep({ type: "responding" });
+              if (data.type === "response") {
                 assistantContent += data.content;
                 setStreamingContent(assistantContent);
               } else if (data.type === "done") {
-                setCurrentStep(null);
                 setIsStreaming(false);
-                if (assistantContent.trim()) {
-                  setMessages((prev) => [...prev, {
-                    role: "assistant",
-                    type: "text",
-                    content: assistantContent,
-                    toolCalls: currentRunToolCalls.filter(t => t.status === "completed"),
-                    contactContext: selectedContact
-                  }]);
-                }
-                setTimeout(() => { setStreamingContent(""); setToolCalls([]); }, 500);
+                setMessages(prev => [...prev, { role: "assistant", type: "text", content: assistantContent }]);
+                setStreamingContent("");
               }
-            } catch (e) { console.error(e); }
+            } catch (e) { }
           }
         }
       }
@@ -213,125 +134,202 @@ STRICT OUTPUT RULES:
   };
 
   return (
-    <div className="flex h-screen bg-[#050505] text-white overflow-hidden font-sans">
+    <div className="flex h-screen bg-[#020202] text-white overflow-hidden font-sans selection:bg-purple-500/30">
+
+      {/* ANIMATION STYLES */}
+      <style>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-20px) rotate(2deg); }
+        }
+        .robot-3d-anim {
+          animation: float 6s ease-in-out infinite;
+          filter: drop-shadow(0 0 40px rgba(249, 115, 22, 0.4)); /* Orange Glow */
+        }
+        .aurora-bg {
+          background-image: 
+            radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.15) 0px, transparent 50%),
+            radial-gradient(at 100% 100%, rgba(168, 85, 247, 0.15) 0px, transparent 50%);
+          animation: aurora 15s ease infinite alternate;
+          background-size: 150% 150%;
+        }
+        @keyframes aurora {
+          0% { background-position: 50% 50%; }
+          50% { background-position: 100% 0%; }
+          100% { background-position: 50% 50%; }
+        }
+        .glass-panel {
+          background: rgba(10, 10, 10, 0.6);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+      `}</style>
+
       <Sidebar />
 
-      {/* INTEGRATION WRAPPERS:
-         We wrap YOUR working code in their providers.
-         This doesn't break your code, but prepares it for the future.
-      */}
-      <ArtifactProvider>
-        <ThreadProvider>
-          <StreamProvider>
+      {/* Main Content Area */}
+      <div className="flex-1 relative aurora-bg flex flex-col h-full">
 
-            <div className="flex-1 flex flex-col h-full relative">
-              {/* Header */}
-              <div className="p-6 border-b border-white/10 bg-gradient-to-r from-blue-900/20 to-purple-900/20 flex justify-between items-center z-20 shrink-0">
-                <div>
-                  <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent flex items-center gap-2">
-                    <Bot className="w-6 h-6 text-blue-400" /> Outreach Agent
-                  </h1>
-                  <p className="text-xs text-neutral-400 mt-1">AI-Powered Negotiation & Drafting</p>
+        {/* --- STATE 1: INTRO SCREEN --- */}
+        {!hasStarted ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-6 relative z-10 animate-in fade-in duration-700">
+
+            {/* --- 3D ROBOT VISUAL (High Quality Orange Robot) --- */}
+            <div className="mb-8 relative w-[450px] h-[450px] flex items-center justify-center -mt-20">
+              {/* Glow behind robot */}
+              <div className="absolute inset-0 bg-orange-500/20 blur-[100px] rounded-full animate-pulse"></div>
+
+              {/* This image is a High-Quality 3D Render of an Orange/Yellow Robot */}
+              <img
+                src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExOTd4aXpqOG9qbXJrbzA4a3A4c2N4ZjJoYzh4aHpwa2xsMHQ1eXoxeiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/5k5vZwRFZR5aZeniqb/giphy.gif"
+                alt="3D AI Robot"
+                className="w-full h-full object-contain robot-3d-anim relative z-10"
+              />
+            </div>
+
+            <div className="text-center space-y-8 max-w-2xl relative z-20 -mt-24">
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-orange-300 mb-2 backdrop-blur-md shadow-lg">
+                <Sparkles className="w-3 h-3 text-orange-400" /> NEXT-GEN AI AGENT
+              </div>
+
+              <h1 className="text-5xl md:text-7xl font-bold tracking-tighter bg-gradient-to-b from-white via-white to-neutral-500 bg-clip-text text-transparent drop-shadow-sm">
+                Hello, Human.
+              </h1>
+
+              <p className="text-neutral-400 text-lg md:text-xl font-medium leading-relaxed max-w-lg mx-auto">
+                I am <span className="text-white">Verve</span>. Your autonomous engine for drafting, negotiating, and closing deals.
+              </p>
+
+              <button
+                onClick={() => setHasStarted(true)}
+                className="group relative inline-flex items-center gap-3 px-8 py-4 bg-white text-black rounded-full font-bold text-lg shadow-[0_0_50px_rgba(255,255,255,0.2)] hover:shadow-[0_0_80px_rgba(255,255,255,0.4)] transition-all transform hover:scale-105 active:scale-95"
+              >
+                Initialize System
+                <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              </button>
+            </div>
+          </div>
+        ) : (
+
+          /* --- STATE 2: CHAT INTERFACE --- */
+          <div className="flex-1 flex flex-col h-full animate-in slide-in-from-bottom-10 fade-in duration-700">
+
+            {/* Header */}
+            <div className="absolute top-0 left-0 right-0 z-30 p-6">
+              <div className="glass-panel rounded-2xl px-6 py-4 flex justify-between items-center shadow-lg">
+                <div className="flex items-center gap-4">
+                  {/* Small version of the 3D head */}
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500/20 to-yellow-500/20 flex items-center justify-center border border-white/10 overflow-hidden">
+                    <img
+                      src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExOTd4aXpqOG9qbXJrbzA4a3A4c2N4ZjJoYzh4aHpwa2xsMHQ1eXoxeiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/5k5vZwRFZR5aZeniqb/giphy.gif"
+                      className="w-12 h-12 object-cover translate-y-1"
+                      alt="Mini Robot"
+                    />
+                  </div>
+                  <div>
+                    <h1 className="text-lg font-bold text-white">Verve AI</h1>
+                    <div className="flex items-center gap-1.5">
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                      </span>
+                      <p className="text-[10px] text-emerald-400 font-medium tracking-wide">SYSTEM ACTIVE</p>
+                    </div>
+                  </div>
                 </div>
-                {selectedContact && (
-                  <div className="flex items-center gap-3 bg-blue-600/10 border border-blue-500/30 px-4 py-2 rounded-full animate-in fade-in slide-in-from-top-2">
-                    <div className="text-right">
-                      <p className="text-xs text-blue-300 font-bold">Targeting: {selectedContact.name}</p>
-                      <p className="text-[10px] text-blue-400/60">{selectedContact.role}</p>
-                    </div>
-                    <button onClick={() => setSelectedContact(null)} className="hover:text-white text-blue-400 transition"><X className="w-4 h-4" /></button>
-                  </div>
-                )}
-              </div>
 
-              {/* Chat Area */}
-              <div className="flex-1 overflow-y-auto px-6 md:px-12 py-6 space-y-6 custom-scrollbar">
-                {messages.map((msg, i) => (
-                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className={`flex flex-col max-w-3xl ${msg.role === "user" ? "items-end" : "items-start"}`}>
-                      <div className={`px-5 py-4 rounded-2xl text-sm shadow-lg ${msg.role === "user" ? "bg-blue-600" : "bg-[#111] border border-white/5 text-neutral-300"}`}>
-                        <MarkdownRenderer>{msg.content}</MarkdownRenderer>
+                <button onClick={() => setHasStarted(false)} className="p-2 hover:bg-white/10 rounded-xl transition-colors text-neutral-400 hover:text-white">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Chat Scroll Area */}
+            <div className="flex-1 overflow-y-auto px-4 md:px-20 pt-28 pb-6 space-y-6 custom-scrollbar scroll-smooth">
+              {messages.map((msg, i) => (
+                <div key={i} className={`flex w-full ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div className={`flex flex-col max-w-2xl ${msg.role === "user" ? "items-end" : "items-start"}`}>
+
+                    <div className={`px-6 py-4 rounded-2xl text-sm shadow-xl backdrop-blur-md border ${msg.role === "user"
+                      ? "bg-purple-600/20 border-purple-500/30 text-white rounded-tr-sm"
+                      : "bg-[#111]/80 border-white/10 text-neutral-200 rounded-tl-sm"
+                      }`}>
+                      <MarkdownRenderer>{msg.content}</MarkdownRenderer>
+                    </div>
+
+                    {/* ACTIONS */}
+                    {msg.role === 'assistant' && (
+                      <div className="mt-3 w-full pl-1">
+                        {activeSendFlow?.msgIndex === i ? (
+                          <div className="glass-panel p-2 rounded-xl flex items-center gap-2 animate-in zoom-in-95 max-w-md">
+                            <input
+                              autoFocus
+                              placeholder={activeSendFlow.type === 'email' ? "Email address..." : "Phone number..."}
+                              className="bg-transparent border-none outline-none text-sm text-white px-2 flex-1"
+                              value={activeSendFlow.value}
+                              onChange={(e) => setActiveSendFlow({ ...activeSendFlow, value: e.target.value })}
+                              onKeyDown={(e) => e.key === 'Enter' && handleSendAction(i, msg.content)}
+                            />
+                            <button onClick={() => handleSendAction(i, msg.content)} className="bg-purple-600 hover:bg-purple-500 text-white p-2 rounded-lg">
+                              {loadingAction ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <button onClick={() => setActiveSendFlow({ msgIndex: i, type: 'email', value: '' })} className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-purple-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
+                              <Mail className="w-3 h-3" /> Email
+                            </button>
+                            <button onClick={() => setActiveSendFlow({ msgIndex: i, type: 'whatsapp', value: '' })} className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-green-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
+                              <Phone className="w-3 h-3" /> WhatsApp
+                            </button>
+                          </div>
+                        )}
                       </div>
-
-                      {/* EMAIL BUTTONS */}
-                      {msg.role === 'assistant' && msg.contactContext && (
-                        <div className="flex gap-2 mt-2 animate-in fade-in slide-in-from-top-1">
-                          <button
-                            onClick={() => sendToPlatform('email', msg.content, msg.contactContext)}
-                            disabled={sendingEmail}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:bg-white/5 rounded-lg text-xs font-medium transition-colors text-neutral-400 hover:text-white disabled:opacity-50"
-                          >
-                            {sendingEmail ? <Loader2 className="w-3 h-3 text-orange-400 animate-spin" /> : <Mail className="w-3 h-3 text-orange-400" />}
-                            {sendingEmail ? "Sending..." : `Email ${msg.contactContext.name.split(' ')[0]}`}
-                          </button>
-                          <button
-                            onClick={() => sendToPlatform('whatsapp', msg.content, msg.contactContext)}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:bg-white/5 rounded-lg text-xs font-medium transition-colors text-neutral-400 hover:text-white"
-                          >
-                            <Phone className="w-3 h-3 text-green-400" /> WhatsApp
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Tools Display */}
-                      {msg.toolCalls && msg.toolCalls.length > 0 && showSteps && (
-                        <div className="mt-2 space-y-1">
-                          {msg.toolCalls.map((tool, idx) => (
-                            <div key={idx} className="flex items-center gap-2 text-[10px] text-purple-400/70 bg-purple-900/10 px-2 py-1 rounded border border-purple-500/10">
-                              <CheckCircle className="w-3 h-3" /> Used: {tool.name}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </div>
-                ))}
-                {streamingContent && (
-                  <div className="flex justify-start">
-                    <div className="px-5 py-4 rounded-2xl max-w-3xl text-sm shadow-lg bg-[#111] border border-blue-500/30 text-neutral-300 relative overflow-hidden">
-                      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500 animate-pulse" />
-                      <MarkdownRenderer>{streamingContent}</MarkdownRenderer>
-                    </div>
-                  </div>
-                )}
-                <div ref={bottomRef} />
-              </div>
+                </div>
+              ))}
 
-              {/* Input Area */}
-              <div className="p-6 bg-[#050505] border-t border-white/10 relative z-40 shrink-0">
-                {showMentionMenu && (
-                  <div className="absolute bottom-20 left-6 w-64 bg-[#111] border border-white/20 rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                    <div className="p-2 bg-white/5 text-[10px] text-neutral-400 uppercase font-bold tracking-wider">Select Contact</div>
-                    {contacts.map(c => (
-                      <button key={c.id || c._id} onClick={() => selectContact(c)} className="w-full text-left p-3 hover:bg-blue-600 flex items-center gap-3 transition-colors border-b border-white/5">
-                        <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-bold text-white">{c.name?.[0]}</div>
-                        <div><p className="text-sm font-bold text-white">{c.name}</p><p className="text-[10px] text-neutral-400">{c.role}</p></div>
-                      </button>
-                    ))}
+              {streamingContent && (
+                <div className="flex justify-start w-full animate-pulse">
+                  <div className="px-6 py-4 rounded-2xl rounded-tl-sm bg-[#111]/60 border border-purple-500/20 text-neutral-300 text-sm max-w-2xl">
+                    <MarkdownRenderer>{streamingContent}</MarkdownRenderer>
                   </div>
-                )}
+                </div>
+              )}
+              <div ref={bottomRef} className="h-4" />
+            </div>
 
-                <div className="flex items-center bg-[#111] border border-white/10 rounded-2xl px-4 py-3 gap-3 focus-within:border-blue-500/50 transition-colors shadow-lg">
+            {/* Input Area */}
+            <div className="p-6 relative z-40 shrink-0">
+              <div className="max-w-4xl mx-auto relative group">
+                <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl opacity-20 group-focus-within:opacity-60 blur transition duration-500"></div>
+                <div className="relative flex items-center bg-[#0A0A0A] border border-white/10 rounded-2xl px-4 py-3 gap-4 shadow-2xl">
                   <input
                     value={input}
-                    onChange={handleInputChange}
+                    onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && !isStreaming && sendMessage()}
-                    placeholder={selectedContact ? `Draft for ${selectedContact.name}...` : "Type @ to mention a contact..."}
-                    className="flex-1 bg-transparent outline-none text-sm text-white placeholder-neutral-500"
+                    placeholder="Type your request here..."
+                    className="flex-1 bg-transparent outline-none text-base text-white placeholder-neutral-600 font-medium"
                     disabled={isStreaming}
                     autoFocus
                   />
-                  <button onClick={sendMessage} className="bg-blue-600 p-2 rounded-lg hover:bg-blue-500 disabled:opacity-50 transition shadow-lg shadow-blue-900/20" disabled={isStreaming || !input.trim()}>
-                    <Send className="w-4 h-4" />
+                  <button
+                    onClick={sendMessage}
+                    className="p-3 rounded-xl bg-purple-600 text-white hover:bg-purple-500 transition-all shadow-lg shadow-purple-900/20"
+                    disabled={isStreaming || !input.trim()}
+                  >
+                    {isStreaming ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                   </button>
                 </div>
               </div>
-
             </div>
 
-          </StreamProvider>
-        </ThreadProvider>
-      </ArtifactProvider>
+          </div>
+        )}
+
+      </div>
     </div>
   );
 }
