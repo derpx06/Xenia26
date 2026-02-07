@@ -258,7 +258,7 @@ export function Thread() {
                             <div className="p-1.5 bg-indigo-600 rounded-lg group-hover:scale-110 transition-transform shadow-lg shadow-indigo-500/20">
                                 <LangGraphLogoSVG width={20} height={10} className="text-white fill-white" />
                             </div>
-                            <h1 className="text-sm font-black uppercase tracking-widest text-zinc-200">Xenia AI Outreach</h1>
+                            <h1 className="text-sm font-black uppercase tracking-widest text-zinc-200">OutreachAi</h1>
                         </div>
                     </div>
 
