@@ -37,40 +37,40 @@ def main():
     # --------------------
     # GitHub
     # --------------------
-    run(
-        "GitHubProfileCrawler",
-        GithubProfileCrawler(),
-        "torvalds",
-    )
+    # run(
+    #     "GitHubProfileCrawler",
+    #     GithubProfileCrawler(),
+    #     "torvalds",
+    # )
 
     # --------------------
     # Twitter / X
     # (requires valid twitter_cookies.json)
     # --------------------
-    run(
-        "TwitterProfileCrawler",
-        TwitterProfileCrawler(),
-        "Rainmaker1973",
-    )
+    # run(
+    #     "TwitterProfileCrawler",
+    #     TwitterProfileCrawler(),
+    #     "Rainmaker1973",
+    # )
 
-    # --------------------
-    # LinkedIn
-    # (requires cookies OR username/password in settings)
-    # --------------------
-    run(
-        "LinkedInCrawler",
-        LinkedInCrawler(scroll_limit=5, cookies_file="linkedin_cookies.json"),
-        "https://www.linkedin.com/in/vishal-autade-b0191227b/",
-    )
+    # # --------------------
+    # # LinkedIn
+    # # (requires cookies OR username/password in settings)
+    # # --------------------
+    # run(
+    #     "LinkedInCrawler",
+    #     LinkedInCrawler(scroll_limit=5, cookies_file="linkedin_cookies.json"),
+    #     "https://www.linkedin.com/in/vishal-autade-b0191227b/",
+    # )
 
-    # --------------------
-    # Medium
-    # --------------------
-    run(
-        "MediumCrawler",
-        MediumCrawler(),
-        "https://medium.com/@theyashwanthsai/i-have-built-around-300-agents-worked-at-5-startups-heres-what-i-learnt-about-ai-agent-e911ffa62682",
-    )
+    # # --------------------
+    # # Medium
+    # # --------------------
+    # run(
+    #     "MediumCrawler",
+    #     MediumCrawler(),
+    #     "https://medium.com/@theyashwanthsai/i-have-built-around-300-agents-worked-at-5-startups-heres-what-i-learnt-about-ai-agent-e911ffa62682",
+    # )
 
     # --------------------
     # Custom Article
@@ -78,7 +78,7 @@ def main():
     run(
         "CustomArticleCrawler",
         CustomArticleCrawler(),
-        "https://www.anthropic.com/engineering/building-c-compiler",
+        "https://medium.com/@theyashwanthsai/i-have-built-around-300-agents-worked-at-5-startups-heres-what-i-learnt-about-ai-agent-e911ffa62682",
     )
 
 

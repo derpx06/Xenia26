@@ -66,6 +66,24 @@ async def stream_agent_response(
                         content=chunk_content
                     )
                     yield f"data: {chunk.model_dump_json()}\n\n"
+
+            # Handle LLM generation end (fallback for non-streaming chunks)
+            elif event_type == "on_chat_model_end":
+                data = event.get("data", {})
+                output = data.get("output")
+                if output and hasattr(output, "content") and output.content:
+                    content = output.content
+                    # Check if content was streamed
+                    # Using a loose check to avoid duplication if partial streaming happened
+                    # But for the "missing final response" case, it usually fails completely.
+                    if content not in accumulated_content:
+                        logger.warning(f"Recovering missing content: {content[:50]}...")
+                        chunk = AgentStreamChunk(
+                            type="response",
+                            content=content
+                        )
+                        yield f"data: {chunk.model_dump_json()}\n\n"
+                        accumulated_content += content
             
             # Handle tool execution start
             elif event_type == "on_tool_start":

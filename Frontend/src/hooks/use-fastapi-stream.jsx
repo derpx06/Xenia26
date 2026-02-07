@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { toast } from 'sonner';
 
@@ -6,6 +6,7 @@ export function useFastAPIStream({
     apiUrl,
     apiKey,
     assistantId,
+    threadId,
     onThreadId,
 }) {
     const [messages, setMessages] = useState([]);
@@ -27,6 +28,51 @@ export function useFastAPIStream({
             setMessages(newMessages);
         }
     };
+
+    // Fetch history when threadId changes
+    useEffect(() => {
+        async function fetchHistory() {
+            if (!threadId) {
+                setMessages([]);
+                messagesRef.current = [];
+                return;
+            }
+
+            try {
+                const res = await fetch(`${apiUrl}/ml/agent/threads/${threadId}`);
+                if (!res.ok) throw new Error("Failed to fetch history");
+
+                const history = await res.json();
+
+                // Map backend history to frontend message format
+                const mappedMessages = history.map(msg => {
+                    if (msg.role === 'user') {
+                        return {
+                            id: uuidv4(),
+                            type: 'human',
+                            content: msg.content
+                        };
+                    } else if (msg.role === 'assistant') {
+                        // For now we don't have tool calls persisted fully, just content
+                        return {
+                            id: uuidv4(),
+                            type: 'ai',
+                            content: msg.content,
+                            tool_calls: msg.tool_calls || []
+                        };
+                    }
+                    return null;
+                }).filter(Boolean);
+
+                setMessagesSafe(mappedMessages);
+            } catch (e) {
+                console.error("Error fetching history:", e);
+                toast.error("Failed to load conversation history");
+            }
+        }
+
+        fetchHistory();
+    }, [threadId, apiUrl]);
 
     const stop = useCallback(() => {
         if (abortControllerRef.current) {

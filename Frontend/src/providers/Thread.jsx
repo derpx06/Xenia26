@@ -7,7 +7,7 @@ import {
     useCallback,
     useState,
 } from "react";
-import { createClient } from "./client";
+import { createClient } from "./custom-client";
 
 const ThreadContext = createContext(undefined);
 

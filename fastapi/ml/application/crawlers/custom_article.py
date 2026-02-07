@@ -1,11 +1,7 @@
 from urllib.parse import urlparse
-
-from langchain_community.document_loaders import AsyncHtmlLoader
-from langchain_community.document_transformers.html2text import Html2TextTransformer
 from loguru import logger
 
 from ml.domain.documents import ArticleDocument
-
 from .base import BaseCrawler
 
 
@@ -16,64 +12,40 @@ class CustomArticleCrawler(BaseCrawler):
         super().__init__()
 
     async def aextract(self, link: str, **kwargs) -> dict | None:
-        old_model = await self.model.find_one({"link": link})
+        # Check if article exists in DB
+        old_model = self.model.find(link=link)
         if old_model is not None:
             logger.info(f"Article already exists in the database: {link}")
             return old_model.content
 
-        logger.info(f"Starting scrapping article: {link}")
-        
+        logger.info(f"Starting scraping article with Crawl4AI: {link}")
+
         try:
-            import aiohttp
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(link, headers={"User-Agent": "Mozilla/5.0"}) as response:
-                    if response.status != 200:
-                        logger.error(f"Failed to fetch {link}: {response.status}")
-                        return None
-                    html_content = await response.text()
-            
-            # Run CPU-bound parsing in a separate thread
-            import asyncio
-            content = await asyncio.to_thread(self._parse_html, html_content, link)
+            from crawl4ai import AsyncWebCrawler
 
-            parsed_url = urlparse(link)
-            platform = parsed_url.netloc
+            async with AsyncWebCrawler() as crawler:
+                # magic=True handles anti-bot detection automatically
+                result = await crawler.arun(url=link, magic=True)
 
-            user = kwargs.get("user")
-            
-            logger.info(f"Finished scrapping custom article: {link}")
+            if not result.success:
+                logger.error(f"Failed to crawl {link}: {result.error_message}")
+                return None
+
+            content = {
+                "title": result.metadata.get("title", ""),
+                "subtitle": result.metadata.get("description", ""),
+                "content": result.markdown,
+                "language": "en", # default to en for now
+                "source_url": link,
+            }
+
+            logger.info(f"Finished scraping custom article: {link}")
             return content
 
         except Exception as e:
             logger.error(f"Error in CustomArticleCrawler.aextract: {e}")
-            raise e
+            raise
 
-    def _parse_html(self, html_content: str, link: str) -> dict:
-        """CPU-bound parsing logic to be run in a thread"""
-        from bs4 import BeautifulSoup
-        import html2text
-
-        # Simple metadata extraction
-        soup = BeautifulSoup(html_content, "html.parser")
-        title = soup.title.string if soup.title else ""
-        description = ""
-        meta_desc = soup.find("meta", attrs={"name": "description"})
-        if meta_desc:
-            description = meta_desc.get("content", "")
-            
-        # Convert to markdown
-        h = html2text.HTML2Text()
-        h.ignore_links = False
-        content_md = h.handle(html_content)
-        
-        return {
-            "Title": title,
-            "Subtitle": description,
-            "Content": content_md,
-            "language": "en", # default
-        }
-
-    def extract(self, link: str, **kwargs) -> None:
+    def extract(self, link: str, **kwargs):
         import asyncio
         return asyncio.run(self.aextract(link, **kwargs))

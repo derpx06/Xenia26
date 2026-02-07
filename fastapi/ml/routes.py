@@ -6,6 +6,8 @@ import json
 from ml.application.agent.schemas import AgentRequest, AgentResponse
 from ml.application.agent.streaming import stream_agent_response
 from ml.application.agent.graph import run_agent
+from ml.infrastructure.db.sqlite import get_thread_history, add_message, create_thread, get_all_threads
+import uuid
 
 router = APIRouter(prefix="/ml", tags=["ML"])
 
@@ -113,18 +115,72 @@ async def agent_chat_stream(request: AgentRequest):
         }
     """
     try:
-        return StreamingResponse(
-            stream_agent_response(
+        # 1. Handle Thread ID
+        thread_id = request.thread_id or str(uuid.uuid4())
+        
+        # 2. Get History if thread exists
+        history_dicts = get_thread_history(thread_id)
+        
+        # If history exists, it overrides request.conversation_history
+        # But for now, let's merge or use request history if DB is empty
+        # A simple strategy: usage of DB history is preferred if thread_id was provided
+        if request.thread_id and history_dicts:
+            pass # We will use history_dicts below
+        else:
+            # If no existing thread, use request history
+            history_dicts = [msg.model_dump() for msg in request.conversation_history]
+            
+        # 3. Save User Message
+        add_message(
+            thread_id=thread_id,
+            role="user",
+            content=request.message
+        )
+
+        # 4. Stream and Capture Response
+        async def stream_and_persist():
+            full_response = ""
+            tool_calls = []
+            
+            # Send initial thread_id event if needed by frontend (optional)
+            yield f"data: {json.dumps({'thread_id': thread_id})}\n\n"
+            
+            async for chunk in stream_agent_response(
                 message=request.message,
                 model=request.model,
-                conversation_history=[msg.model_dump() for msg in request.conversation_history],
+                conversation_history=history_dicts,
                 max_iterations=request.max_iterations
-            ),
+            ):
+                # Parse chunk to accumulate content
+                if chunk.startswith("data: "):
+                    try:
+                        data = json.loads(chunk[6:])
+                        if "content" in data:
+                            full_response += data["content"]
+                        # We might parse tool calls here if needed, but simplified for now
+                        # Ideally, stream_agent_response should yield structured events we can capture
+                    except:
+                        pass
+                yield chunk
+            
+            # 5. Save Assistant Message on completion
+            # Note: capturing tool calls from raw stream text is hard. 
+            # Ideally stream_agent_response returns the final state or we refactor.
+            # For now, we save the text response.
+            if full_response:
+                add_message(
+                    thread_id=thread_id,
+                    role="assistant",
+                    content=full_response
+                )
+
+        return StreamingResponse(
+            stream_and_persist(),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",  # Disable proxy buffering for immediate streaming
+                "X-Accel-Buffering": "no",
             }
         )
     except Exception as e:
@@ -182,4 +238,47 @@ async def agent_chat_sync(request: AgentRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Agent chat failed: {str(e)}"
+        )
+
+
+@router.get("/agent/threads")
+async def get_threads():
+    """
+    Get all conversation threads.
+    """
+    try:
+        threads = get_all_threads()
+        return [
+            {
+                "id": t.id,
+                "created_at": t.created_at,
+                "updated_at": t.updated_at,
+                "metadata": {"title": t.title or "New Conversation"}
+            }
+            for t in threads
+        ]
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch threads: {str(e)}"
+        )
+
+
+@router.get("/agent/threads/{thread_id}")
+async def get_thread_history_endpoint(thread_id: str):
+    """
+    Get conversation history for a specific thread.
+    """
+    try:
+        history = get_thread_history(thread_id)
+        if not history:
+            return []
+            
+        # Transform for frontend if necessary, or return as is
+        # The frontend expects: role, content, tool_calls
+        return history
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch thread history: {str(e)}"
         )

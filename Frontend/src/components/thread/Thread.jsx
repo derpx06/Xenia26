@@ -304,24 +304,50 @@ export function Thread() {
                                         </motion.div>
                                     )}
 
-                                    {messages
-                                        .filter((m) => !m.id?.startsWith(DO_NOT_RENDER_ID_PREFIX))
-                                        .map((message, index) =>
-                                            message.type === "human" ? (
-                                                <HumanMessage
-                                                    key={message.id || `${message.type}-${index}`}
-                                                    message={message}
-                                                    isLoading={isLoading}
-                                                />
-                                            ) : (
-                                                <AssistantMessage
-                                                    key={message.id || `${message.type}-${index}`}
-                                                    message={message}
-                                                    isLoading={isLoading}
-                                                    handleRegenerate={handleRegenerate}
-                                                />
-                                            ),
-                                        )}
+                                    {(() => {
+                                        // Group messages into turns (Human vs Agent+Tools)
+                                        const groupedMessages = [];
+                                        let currentGroup = null;
+
+                                        messages.filter((m) => !m.id?.startsWith(DO_NOT_RENDER_ID_PREFIX)).forEach((m) => {
+                                            if (m.type === "human") {
+                                                if (currentGroup) {
+                                                    groupedMessages.push(currentGroup);
+                                                    currentGroup = null;
+                                                }
+                                                groupedMessages.push({ type: "human", messages: [m] });
+                                            } else if (m.type === "ai" || m.type === "tool") {
+                                                if (!currentGroup) {
+                                                    currentGroup = { type: "agent", messages: [] };
+                                                }
+                                                currentGroup.messages.push(m);
+                                            }
+                                        });
+                                        if (currentGroup) {
+                                            groupedMessages.push(currentGroup);
+                                        }
+
+                                        return groupedMessages.map((group, groupIndex) => {
+                                            if (group.type === "human") {
+                                                return (
+                                                    <HumanMessage
+                                                        key={group.messages[0].id || `human-${groupIndex}`}
+                                                        message={group.messages[0]}
+                                                        isLoading={isLoading}
+                                                    />
+                                                );
+                                            } else {
+                                                return (
+                                                    <AssistantMessage
+                                                        key={`agent-turn-${groupIndex}`}
+                                                        messages={group.messages}
+                                                        isLoading={isLoading}
+                                                        handleRegenerate={handleRegenerate}
+                                                    />
+                                                );
+                                            }
+                                        });
+                                    })()}
 
                                     {hasNoAIOrToolMessages && !!stream.interrupt && (
                                         <AssistantMessage

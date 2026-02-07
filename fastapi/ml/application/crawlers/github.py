@@ -25,9 +25,9 @@ class GithubProfileCrawler(BaseCrawler):
     def __init__(self, github_token: str | None = None, top_repo_limit: int = 5):
         super().__init__()
         self.top_repo_limit = top_repo_limit
-        self.headers = {
-            "Accept": "application/vnd.github+json",
-        }
+        self.headers.update({
+            "Accept": "application/vnd.github.v3+json",
+        })
         if github_token:
             self.headers["Authorization"] = f"Bearer {github_token}"
 
@@ -55,15 +55,28 @@ class GithubProfileCrawler(BaseCrawler):
 
     def _get_profile_readme(self, username: str) -> Optional[str]:
         """
-        Fetch profile README (from username/username repository).
-        This is the README that appears on the profile page.
+        Robustly fetch GitHub profile README from username/username repo.
         """
         try:
             logger.info(f"Fetching profile README for {username}")
-            return self._get_readme(username, username)
+
+            contents = self._api(f"/repos/{username}/{username}/contents")
+
+            for item in contents:
+                if item["type"] == "file" and item["name"].lower().startswith("readme"):
+                    if item.get("content"):
+                        return base64.b64decode(item["content"]).decode("utf-8")
+
+                    # Fallback: fetch raw file
+                    raw = requests.get(item["download_url"], timeout=20)
+                    raw.raise_for_status()
+                    return raw.text
+
         except Exception as e:
-            logger.debug(f"No profile README found: {e}")
-            return None
+            logger.debug(f"No profile README found for {username}: {e}")
+
+        return None
+
 
     def extract(self, username: str, **kwargs) -> None:
         """

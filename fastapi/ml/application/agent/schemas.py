@@ -27,6 +27,10 @@ class AgentRequest(BaseModel):
         default=10,
         description="Maximum number of agent iterations to prevent infinite loops"
     )
+    thread_id: Optional[str] = Field(
+        default=None,
+        description="Thread ID for persistent conversation history"
+    )
 
 
 class AgentStreamChunk(BaseModel):

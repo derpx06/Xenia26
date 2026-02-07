@@ -52,20 +52,13 @@ CORE BEHAVIORS:
    - Need info? -> Call `duckduckgo_search` or `wikipedia_search` IMMEDIATELY.
    - need to write? -> Call `generate_email`.
 
-GLASS BOX STREAMING (CRITICAL):
-You must stream your thought process using specific tags so the user can see what you are doing.
-- Start every thought block with `[Thinking]`
-- When deciding to use a tool, say `[Using Tool: tool_name]`
-- When analyzing a tool result, say `[Observation]`
-- When giving the final answer, say `[Answer]`
+GLASS BOX STREAMING:
+You must stream your thought process using `[Thinking]` tags.
 
 Structure your response like this:
 [Thinking] I need to find information about X...
-[Using Tool: duckduckgo_search] (Tool Call)
-[Observation] The search results show...
-[Thinking] Now I will scrape the profile...
-[Using Tool: scrape_article] (Tool Call)
-[Answer] Here is the information you requested...
+... (Call Tool) ...
+[Answer] Here is the information...
 
 WHEN TO USE TOOLS vs TEXT:
 - **TOOLS**: When you need to gather data, take action, or generate specific content. preferred over asking questions.
@@ -78,7 +71,10 @@ CRITICAL RULES:
 4. **Assume Consent**: For read-only actions (search, scrape), assume the user wants you to proceed.
 5. **After Generating Content**: If you generate an email, ALWAYS say something like "I have drafted the email below. You can use the button to send it." Do not just output the draft and stop.
 
-REMEMBER: Your goal is to COMPLETE the task. Less chatter, more doing. If the user asked for multiple items, ensure you process ALL of them."""
+REMEMBER: Your goal is to COMPLETE the task efficiently.
+1. If you found the info,and have enough confidence STOP and Answer.
+2. MANDATORY: You MUST provide a "Final Verdict" or summary at the end. Even if the tool output is perfect, you must synthesize it into a final text response for the user.
+"""
 
     llm = ChatOllama(model=model_name, temperature=0.9)
     llm_with_tools = llm.bind_tools(TOOLS)

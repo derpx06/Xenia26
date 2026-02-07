@@ -14,10 +14,20 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from ml.routes import router as ml_router
 
+from contextlib import asynccontextmanager
+from ml.infrastructure.db.sqlite import create_db_and_tables
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Create DB tables
+    create_db_and_tables()
+    yield
+
 app = FastAPI(
     title="Xenia26 Backend API",
     description="Backend API with LangGraph Agent integration",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Add CORS middleware to allow frontend connections

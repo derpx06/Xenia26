@@ -22,6 +22,7 @@ dependencies = [
     'twikit',
     'linkedin-api',
     "pydantic",
+    "crawl4ai",
     "python-dotenv",
     "qdrant-client",
     "numpy",
@@ -33,6 +34,7 @@ dependencies = [
     "beautifulsoup4>=4.14.3",
     "ddgs",
     "wikipedia>=1.4.0",
+    "sqlmodel>=0.0.32",
     "duckduckgo-search>=8.1.1",
     "datasets>=4.5.0",
 ]

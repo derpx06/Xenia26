@@ -61,6 +61,7 @@ const StreamSession = ({
         apiUrl,
         apiKey: apiKey ?? undefined,
         assistantId,
+        threadId,
         onThreadId: (id) => {
             setThreadId(id);
             // Refetch threads logic would go here

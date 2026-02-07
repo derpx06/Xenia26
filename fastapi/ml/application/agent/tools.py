@@ -80,29 +80,10 @@ async def scrape_article(url: Annotated[str, "The URL of the article/profile to 
         # Create dummy user for crawlers
         dummy_user = UserDocument(first_name="Agent", last_name="User")
         
-        # Twitter/X
-        if 'twitter.com' in domain or 'x.com' in domain:
-            match = re.search(r'/([^/?]+)', parsed.path)
-            if match and match.group(1) not in ['home', 'explore', 'notifications']:
-                username = match.group(1)
-                
-                if TWITTER_AVAILABLE:
-                    logger.info(f"Using TwitterProfileCrawler for @{username}")
-                    try:
-                        crawler = TwitterProfileCrawler(
-                            cookies_file="twitter_cookies.json",
-                            tweet_limit=30,
-                            top_tweet_limit=5
-                        )
-                        content = await crawler.aextract(username=username, user=dummy_user)
-                        if content:
-                            return format_twitter_data(content)
-                        return f"✅ Twitter profile @{username} scraped successfully"
-                    except Exception as e:
-                        logger.warning(f"Twitter scraping failed: {e}")
+        
         
         # LinkedIn
-        elif 'linkedin.com' in domain and '/in/' in parsed.path.lower():
+        if 'linkedin.com' in domain and '/in/' in parsed.path.lower():
             logger.info("Using LinkedInCrawler")
             crawler = LinkedInCrawler()
             content = await crawler.aextract(link=url, user=dummy_user)
@@ -117,20 +98,11 @@ async def scrape_article(url: Annotated[str, "The URL of the article/profile to 
                 username = match.group(1)
                 logger.info(f"Using GithubProfileCrawler for {username}")
                 crawler = GithubProfileCrawler(top_repo_limit=5)
-                content = await crawler.aextract(username=username, user=dummy_user)
+                content = await crawler.aextract(link=username, user=dummy_user)
                 if content:
                     return format_github_data(content)
                 return f"✅ GitHub profile {username} scraped successfully"
-        
-        # Medium
-        elif 'medium.com' in domain or 'towardsdatascience.com' in domain:
-            logger.info("Using MediumCrawler")
-            crawler = MediumCrawler()
-            content = await crawler.aextract(link=url, user=dummy_user)
-            if content:
-                return format_article_data(content)
-            return f"✅ Medium article scraped successfully"
-        
+
         # Fallback: CustomArticleCrawler
         logger.info("Using CustomArticleCrawler")
         crawler = CustomArticleCrawler()
