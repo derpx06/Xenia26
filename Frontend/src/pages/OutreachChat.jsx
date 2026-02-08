@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Send, Mail, Phone, X, Bot, Loader2, ArrowRight, Sparkles, Zap, MessageSquare, ChevronRight } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import MarkdownRenderer from "../components/MarkdownRenderer";
+import { ToolCalls, ToolResult } from "../components/thread/messages/tool-calls";
 
 // --- FRIEND'S ARCHITECTURE IMPORTS ---
 import { Thread } from "../components/thread/Thread";
@@ -84,46 +85,100 @@ export default function OutreachChat() {
   const sendMessage = async () => {
     if (!input.trim()) return;
     const originalInput = input;
-    setMessages((prev) => [...prev, { role: "user", type: "text", content: originalInput }]);
+
+    // Optimistically add user message
+    const userMsg = { role: "user", type: "text", content: originalInput };
+    setMessages((prev) => [...prev, userMsg]);
+
     setInput("");
     setIsStreaming(true);
     setStreamingContent("");
+
+    // Create a placeholder for the assistant message
+    const assistantMsgId = Date.now().toString();
+    const initialAssistantMsg = {
+      id: assistantMsgId,
+      role: "assistant",
+      type: "text",
+      content: "",
+      tool_calls: [],
+      tool_results: [],
+      thoughts: []
+    };
+
+    setMessages(prev => [...prev, initialAssistantMsg]);
 
     try {
       const response = await fetch(`${API_BASE_URL}/ml/agent/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "mistral:7b",
+          model: "qwen2.5:3b-instruct",
           message: originalInput,
-          conversation_history: messages.map(m => ({ role: m.role, content: m.content })),
+          conversation_history: messages.map(m => ({
+            role: m.role,
+            content: m.content
+          })),
         }),
       });
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      let assistantContent = "";
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
+        const lines = buffer.split("\n\n"); // Split by double newline for SSE events
         buffer = lines.pop() || "";
+
         for (const line of lines) {
           if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6));
-              if (data.type === "response") {
-                assistantContent += data.content;
-                setStreamingContent(assistantContent);
-              } else if (data.type === "done") {
-                setIsStreaming(false);
-                setMessages(prev => [...prev, { role: "assistant", type: "text", content: assistantContent }]);
-                setStreamingContent("");
-              }
-            } catch (e) { }
+
+              setMessages(prev => {
+                const newMessages = [...prev];
+                const msgIndex = newMessages.findIndex(m => m.id === assistantMsgId);
+                if (msgIndex === -1) return prev;
+
+                const msg = newMessages[msgIndex];
+
+                if (data.type === "response") {
+                  msg.content += data.content;
+                  setStreamingContent(msg.content);
+                }
+                else if (data.type === "tool_call") {
+                  msg.tool_calls = [...(msg.tool_calls || []), {
+                    id: data.tool_call_id || `call_${Date.now()}`, // Ensure ID
+                    name: data.tool_name,
+                    args: data.tool_input,
+                    type: "tool_call"
+                  }];
+                }
+                else if (data.type === "tool_result") {
+                  msg.tool_results = [...(msg.tool_results || []), {
+                    content: data.content || data.tool_output,
+                    name: data.tool_name,
+                    tool_call_id: data.tool_call_id,
+                    type: "tool-result"
+                  }];
+                }
+                else if (data.type === "thought") {
+                  msg.thoughts = [...(msg.thoughts || []), data.content];
+                }
+                else if (data.type === "done") {
+                  setIsStreaming(false);
+                  setStreamingContent("");
+                }
+
+                return newMessages;
+              });
+
+            } catch (e) {
+              console.error("Error parsing SSE:", e);
+            }
           }
         }
       }
@@ -249,13 +304,53 @@ export default function OutreachChat() {
             <div className="flex-1 overflow-y-auto px-4 md:px-20 pt-24 md:pt-28 pb-6 space-y-6 custom-scrollbar scroll-smooth">
               {messages.map((msg, i) => (
                 <div key={i} className={`flex w-full ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div className={`flex flex-col max-w-2xl ${msg.role === "user" ? "items-end" : "items-start"}`}>
+                  <div className={`flex flex-col max-w-2xl ${msg.role === "user" ? "items-end" : "items-start"} w-full`}>
 
+                    {/* PROCESS BOX (Tool Calls / Thoughts) */}
+                    {msg.role === 'assistant' && (
+                      (msg.tool_calls?.length > 0 || msg.tool_results?.length > 0 || msg.thoughts?.length > 0) && (
+                        <div className="mb-2 w-full max-w-2xl flex flex-col gap-2 p-4 bg-zinc-900/80 border border-zinc-700/50 rounded-2xl shadow-sm overflow-hidden animate-in fade-in zoom-in-95 backdrop-blur-sm">
+                          <div className="flex items-center gap-2 mb-1 pb-2 border-b border-white/5">
+                            <div className="size-1.5 bg-indigo-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
+                            <span className="text-[10px] font-black uppercase tracking-widest not-italic text-zinc-500">Agent Process</span>
+                          </div>
+
+                          {/* Thoughts */}
+                          {msg.thoughts?.map((thought, tIdx) => (
+                            <div key={`thought-${tIdx}`} className="italic text-zinc-400 text-sm pl-2 border-l-2 border-zinc-700/50 my-1">
+                              {thought}
+                            </div>
+                          ))}
+
+                          {/* Tool Calls */}
+                          {msg.tool_calls?.length > 0 && (
+                            <ToolCalls toolCalls={msg.tool_calls} />
+                          )}
+
+                          {/* Tool Results */}
+                          {msg.tool_results?.map((res, rIdx) => (
+                            <div key={`res-${rIdx}`} className="mt-2">
+                              <div className="flex items-center gap-2 mb-1">
+                                <div className="size-1.5 bg-emerald-500 rounded-full" />
+                                <span className="text-[10px] font-bold uppercase text-emerald-500/80">Result</span>
+                              </div>
+                              <ToolResult message={res} />
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    )}
+
+                    {/* MESSAGE BUBBLE */}
                     <div className={`px-6 py-4 rounded-2xl text-sm shadow-xl backdrop-blur-md border ${msg.role === "user"
                       ? "bg-purple-600/20 border-purple-500/30 text-white rounded-tr-sm"
-                      : "bg-[#111]/80 border-white/10 text-neutral-200 rounded-tl-sm"
+                      : "bg-[#111]/80 border-white/10 text-neutral-200 rounded-tl-sm w-full"
                       }`}>
-                      <MarkdownRenderer>{msg.content}</MarkdownRenderer>
+                      {msg.content ? (
+                        <MarkdownRenderer>{msg.content}</MarkdownRenderer>
+                      ) : (
+                        <span className="animate-pulse text-zinc-500">Thinking...</span>
+                      )}
                     </div>
 
                     {/* ACTIONS */}
@@ -290,14 +385,6 @@ export default function OutreachChat() {
                   </div>
                 </div>
               ))}
-
-              {streamingContent && (
-                <div className="flex justify-start w-full animate-pulse">
-                  <div className="px-6 py-4 rounded-2xl rounded-tl-sm bg-[#111]/60 border border-purple-500/20 text-neutral-300 text-sm max-w-2xl">
-                    <MarkdownRenderer>{streamingContent}</MarkdownRenderer>
-                  </div>
-                </div>
-              )}
               <div ref={bottomRef} className="h-4" />
             </div>
 
