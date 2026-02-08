@@ -1,18 +1,18 @@
 """Writing style inference utilities for extracting style rules and examples from documents."""
-
-from agent_style_transfer.llm_provider_setup import get_llm
-from agent_style_transfer.schemas import Document, FewShotExample
+import os
+from agent_style_transfer.llm_provider_setup import get_instructor_client
+from agent_style_transfer.schemas import Document, FewShotExample, StyleRules
 
 
 def infer_style_rules(
-    documents: list[Document], provider: str = "google_genai", model: str = None
+    documents: list[Document], provider: str = "ollama", model: str = None
 ) -> list[str]:
     """
-    Infer style rules from a list of documents using LLM analysis.
+    Infer style rules from a list of documents using LLM analysis with structured output.
 
     Args:
         documents: List of reference documents to analyze
-        provider: LLM provider (openai, anthropic, google_genai)
+        provider: LLM provider (openai, anthropic, google_genai, ollama)
         model: Model name (optional, uses provider default)
 
     Returns:
@@ -21,13 +21,13 @@ def infer_style_rules(
     if not documents:
         return []
 
-    # Get LLM instance
-    llm = get_llm(provider, model, temperature=0.3)
+    # Get Instructor client
+    client, model_name = get_instructor_client(provider, model, temperature=0.3)
 
     # Combine document content for analysis
     combined_content = "\n\n".join(
         [
-            f"Title: {doc.title}\nContent: {doc.content[:300]}..."
+            f"Title: {doc.title}\nContent: {doc.content[:500]}..."
             for doc in documents
             if doc.title and doc.content
         ]
@@ -37,69 +37,43 @@ def infer_style_rules(
         return []
 
     # Create a prompt to analyze writing style patterns
-    prompt = (
-        """
-    Analyze these documents and extract 3-5 specific writing style rules.
+    # Instructor handles the JSON structure enforcement
+    prompt = f"""
+    Analyze the following documents and extract 3-5 specific, actionable writing style rules.
+    Focus on tone, structure, vocabulary, and sentence length.
 
     Documents:
+    {combined_content}
+    
+    Ensure the rules are concise and directly actionable.
     """
-        + f"{combined_content}\n\n"
-        + """
-    Identify the key writing style characteristics and create clear, actionable rules.
-    Focus on tone, structure, vocabulary, and writing patterns.
 
-    Format your response as a simple list, one rule per line:
-    - [Rule 1]
-    - [Rule 2]
-    - [Rule 3]
-    """
-    )
-
-    response = llm.invoke(prompt)
-
-    # Handle different response types
-    if isinstance(response, dict):
-        # If response is a dict, extract content from common keys
-        content = response.get("content", response.get("text", str(response)))
-    elif hasattr(response, "content"):
-        content = response.content
-    else:
-        content = str(response)
-
-    # Ensure content is always a string
-    if isinstance(content, list):
-        content = content[0] if content else ""
-    elif isinstance(content, dict):
-        # Extract text from common response dict keys
-        content = content.get("text", content.get("content", str(content)))
-    elif not isinstance(content, str):
-        content = str(content)
-
-    # Final safety check - ensure we have a string
-    if not isinstance(content, str):
-        content = str(content)
-
-    # Parse the response to extract rules
-    rules = []
-    for line in content.split("\n"):
-        line = line.strip()
-        if line.startswith("-") or line.startswith("•"):
-            rule = line[1:].strip()
-            if rule:
-                rules.append(rule)
-
-    return rules
+    try:
+        # Structured output call
+        resp = client.create(
+            model=model_name,
+            response_model=StyleRules,
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            max_retries=3,
+        )
+        return resp.rules
+    except Exception as e:
+        # Fallback or error logging
+        print(f"Error inferring style rules: {e}")
+        return []
 
 
 def infer_few_shot_examples(
-    documents: list[Document], provider: str = "google_genai", model: str = None
+    documents: list[Document], provider: str = "ollama", model: str = None
 ) -> list[FewShotExample]:
     """
-    Infer few-shot examples from a list of documents using LLM analysis.
+    Infer few-shot examples from a list of documents using LLM analysis with structured output.
 
     Args:
         documents: List of reference documents to analyze
-        provider: LLM provider (openai, anthropic, google_genai)
+        provider: LLM provider (openai, anthropic, google_genai, ollama)
         model: Model name (optional, uses provider default)
 
     Returns:
@@ -108,71 +82,39 @@ def infer_few_shot_examples(
     if not documents:
         return []
 
-    # Get LLM instance
-    llm = get_llm(provider, model, temperature=0.3)
+    # Get Instructor client
+    client, model_name = get_instructor_client(provider, model, temperature=0.3)
 
     examples = []
 
     # Analyze each document to create meaningful examples
     for doc in documents:
         if doc.title and doc.content:
-            # Create a prompt to analyze the writing style
-            prompt = (
-                """
-            Analyze this document and create a few-shot example that demonstrates its writing style.
+            prompt = f"""
+            Analyze this document and create a SINGLE few-shot example that demonstrates its writing style.
 
-            Document Title: """
-                + f"{doc.title}\n"
-                + "Document Content: "
-                + f"{doc.content[:500]}...\n\n"
-                + """
-            Create a simple input-output pair that shows how to write in this style.
-            The input should be a generic topic, and the output should demonstrate the same writing style.
-
-            Format your response as:
-            Input: [generic topic]
-            Output: [content in the same style]
-
-            Keep the output concise (100-200 words) and focus on capturing the writing style.
+            Document:
+            Title: {doc.title}
+            Content: {doc.content[:500]}...
+            
+            Create a simple input-output pair.
+            Input: A generic topic or question.
+            Output: A response written in the EXACT same style as the document (vocabulary, tone, structure).
             """
-            )
 
-            response = llm.invoke(prompt)
-
-            # Handle different response types
-            if isinstance(response, dict):
-                # If response is a dict, extract content from common keys
-                content = response.get("content", response.get("text", str(response)))
-            elif hasattr(response, "content"):
-                content = response.content
-            else:
-                content = str(response)
-
-            # Ensure content is always a string
-            if isinstance(content, list):
-                content = content[0] if content else ""
-            elif isinstance(content, dict):
-                # Extract text from common response dict keys
-                content = content.get("text", content.get("content", str(content)))
-            elif not isinstance(content, str):
-                content = str(content)
-
-            # Final safety check - ensure we have a string
-            if not isinstance(content, str):
-                content = str(content)
-
-            # Parse the response to extract input and output
-            lines = content.split("\n")
-            input_text = ""
-            output_text = ""
-
-            for line in lines:
-                if line.strip().startswith("Input:"):
-                    input_text = line.replace("Input:", "").strip()
-                elif line.strip().startswith("Output:"):
-                    output_text = line.replace("Output:", "").strip()
-
-            if input_text and output_text:
-                examples.append(FewShotExample(input=input_text, output=output_text))
+            try:
+                # Structured output call
+                example = client.create(
+                    model=model_name,
+                    response_model=FewShotExample,
+                    messages=[
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_retries=3,
+                )
+                examples.append(example)
+            except Exception as e:
+                print(f"Error inferring example: {e}")
+                continue
 
     return examples

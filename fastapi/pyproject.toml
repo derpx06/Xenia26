@@ -37,6 +37,9 @@ dependencies = [
     "sqlmodel>=0.0.32",
     "duckduckgo-search>=8.1.1",
     "datasets>=4.5.0",
+    "instructor",
+    "soundfile",
+    "parler_tts"
 ]
 
 [dependency-groups]
