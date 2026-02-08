@@ -17,6 +17,12 @@ const UserSchema = new mongoose.Schema({
     instagram: { type: String, default: "" }
   },
 
+  // New Field for Voice Intro
+  voiceProfile: {
+    data: Buffer,
+    contentType: String
+  },
+
   date: { type: Date, default: Date.now },
 });
 

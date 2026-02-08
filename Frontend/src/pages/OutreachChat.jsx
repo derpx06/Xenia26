@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Send, Mail, Phone, X, Bot, Loader2, ArrowRight, Sparkles, Zap, MessageSquare, ChevronRight } from "lucide-react";
+import { Send, Mail, Phone, X, Bot, Loader2, ArrowRight, Sparkles, Zap, MessageSquare, ChevronRight, Volume2, StopCircle } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 import { ToolCalls, ToolResult } from "../components/thread/messages/tool-calls";
@@ -80,6 +80,26 @@ export default function OutreachChat() {
     } finally {
       setLoadingAction(false);
     }
+  };
+
+  // --- AUDIO GENERATION (TTS) ---
+  const handleGenerateAudio = (text) => {
+    if (!text) return;
+
+    // Stop any current speech
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    // Select a voice if available, otherwise default
+    const voices = window.speechSynthesis.getVoices();
+    // Try to find a good English voice
+    const preferredVoice = voices.find(v => v.name.includes("Google US English") || v.name.includes("Samantha")) || voices[0];
+    if (preferredVoice) utterance.voice = preferredVoice;
+
+    utterance.rate = 1;
+    utterance.pitch = 1;
+
+    window.speechSynthesis.speak(utterance);
   };
 
   const sendMessage = async () => {
@@ -377,6 +397,9 @@ export default function OutreachChat() {
                             </button>
                             <button onClick={() => setActiveSendFlow({ msgIndex: i, type: 'whatsapp', value: '' })} className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-green-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
                               <Phone className="w-3 h-3" /> WhatsApp
+                            </button>
+                            <button onClick={() => handleGenerateAudio(msg.content)} className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
+                              <Volume2 className="w-3 h-3" /> Generate Audio
                             </button>
                           </div>
                         )}

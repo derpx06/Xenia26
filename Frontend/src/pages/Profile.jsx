@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
     User, Mail, Building, Globe, Save, Loader2,
     Linkedin, Twitter, Github, Instagram, Link as LinkIcon,
-    MapPin, Briefcase, Award, TrendingUp, ShieldCheck, CheckCircle2
+    MapPin, Briefcase, Award, TrendingUp, ShieldCheck, CheckCircle2,
+    Mic, Square, Play, Pause, Upload
 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 
@@ -28,6 +29,16 @@ export default function Profile() {
         }
     });
 
+    // Voice State
+    const [recording, setRecording] = useState(false);
+    const [audioBlob, setAudioBlob] = useState(null);
+    const [audioUrl, setAudioUrl] = useState(null);
+    const [savedAudioUrl, setSavedAudioUrl] = useState(null);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const mediaRecorderRef = useRef(null);
+    const audioChunksRef = useRef([]);
+    const audioPlayerRef = useRef(new Audio());
+
     // 2. Load Real Data
     useEffect(() => {
         const fetchProfile = async () => {
@@ -37,6 +48,22 @@ export default function Profile() {
                 return;
             }
             try {
+                const response = await fetch(`${BACKEND_URL}/user/profile?email=${userEmail}`); // Assuming GET support or we just use local storage for initial load for now, BUT we need to check if voice exists.
+                // Since we changed the backend to return voiceProfile boolean on update, we should also probably have a GET route for profile to get that status.
+                // For now, let's try to fetch the voice directly to see if it exists.
+
+                // Fetch Voice
+                try {
+                    const voiceRes = await fetch(`${BACKEND_URL}/user/voice/${userEmail}`);
+                    if (voiceRes.ok) {
+                        const blob = await voiceRes.blob();
+                        const url = URL.createObjectURL(blob);
+                        setSavedAudioUrl(url);
+                    }
+                } catch (err) {
+                    console.error("No voice profile found or error fetching", err);
+                }
+
                 setFormData(prev => ({
                     ...prev,
                     email: userEmail,
@@ -67,7 +94,7 @@ export default function Profile() {
         }
     };
 
-    // Handle Save
+    // Handle Save Text Data
     const handleSave = async () => {
         setSaving(true);
         try {
@@ -89,8 +116,6 @@ export default function Profile() {
                 localStorage.setItem("user", JSON.stringify(updatedUser));
 
                 window.dispatchEvent(new Event("userUpdated"));
-                // Small delay to visually show the "Saved" state if we had one, sticking to alert for now but maybe we can do better? 
-                // Let's stick to the existing pattern but maybe a toast later.
                 alert("✅ Profile Updated Successfully");
             } else {
                 alert(`❌ Error: ${data.message}`);
@@ -100,6 +125,87 @@ export default function Profile() {
             alert("Failed to connect to server.");
         } finally {
             setSaving(false);
+        }
+    };
+
+    // --- Voice Functions ---
+
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorderRef.current = new MediaRecorder(stream);
+            audioChunksRef.current = [];
+
+            mediaRecorderRef.current.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunksRef.current.push(event.data);
+                }
+            };
+
+            mediaRecorderRef.current.onstop = () => {
+                const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+                setAudioBlob(blob);
+                setAudioUrl(URL.createObjectURL(blob));
+            };
+
+            mediaRecorderRef.current.start();
+            setRecording(true);
+        } catch (err) {
+            console.error("Error accessing microphone:", err);
+            alert("Could not access microphone.");
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && recording) {
+            mediaRecorderRef.current.stop();
+            setRecording(false);
+        }
+    };
+
+    const playAudio = (url) => {
+        if (!url) return;
+
+        if (audioPlayerRef.current.src !== url) {
+            audioPlayerRef.current.src = url;
+            audioPlayerRef.current.load();
+        }
+
+        if (isPlaying) {
+            audioPlayerRef.current.pause();
+            setIsPlaying(false);
+        } else {
+            audioPlayerRef.current.play();
+            setIsPlaying(true);
+            audioPlayerRef.current.onended = () => setIsPlaying(false);
+        }
+    };
+
+    const uploadVoice = async () => {
+        if (!audioBlob) return;
+
+        const userEmail = localStorage.getItem("userEmail");
+        const formData = new FormData();
+        formData.append("voice", audioBlob, "voice-intro.webm");
+        formData.append("email", userEmail);
+
+        try {
+            const res = await fetch(`${BACKEND_URL}/user/voice`, {
+                method: "POST",
+                body: formData
+            });
+
+            if (res.ok) {
+                alert("✅ Voice Intro Uploaded!");
+                setSavedAudioUrl(URL.createObjectURL(audioBlob)); // Update saved URL
+                setAudioBlob(null); // Clear pending blob
+                setAudioUrl(null);
+            } else {
+                alert("Failed to upload voice.");
+            }
+        } catch (error) {
+            console.error("Upload Error:", error);
+            alert("Error uploading voice.");
         }
     };
 
@@ -233,6 +339,95 @@ export default function Profile() {
                                                     placeholder="Briefly describe your role and expertise. The AI uses this to personalize your tone."
                                                     className="w-full bg-[#0F0F0F] border border-white/5 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all resize-none placeholder-neutral-700"
                                                 />
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    {/* --- VOICE INTRO SECTION --- */}
+                                    <section>
+                                        <div className="flex items-center gap-2 mb-6">
+                                            <div className="p-1.5 rounded bg-pink-500/10 text-pink-400"><Mic className="w-4 h-4" /></div>
+                                            <h3 className="text-sm font-bold uppercase tracking-wider text-neutral-300">Voice Intro</h3>
+                                        </div>
+
+                                        <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-6 md:p-8">
+                                            <div className="flex flex-col md:flex-row items-center gap-6">
+
+                                                {/* Controls */}
+                                                <div className="flex items-center gap-4">
+                                                    {!recording ? (
+                                                        <button
+                                                            onClick={startRecording}
+                                                            className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-400 rounded-xl hover:bg-red-500/20 transition-all border border-red-500/20"
+                                                        >
+                                                            <div className="w-2 h-2 rounded-full bg-red-500" />
+                                                            Record
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            onClick={stopRecording}
+                                                            className="flex items-center gap-2 px-4 py-2 bg-neutral-800 text-white rounded-xl hover:bg-neutral-700 transition-all border border-white/10 animate-pulse"
+                                                        >
+                                                            <Square className="w-3 h-3 fill-current" />
+                                                            Stop
+                                                        </button>
+                                                    )}
+                                                </div>
+
+                                                {/* Status / Player */}
+                                                <div className="flex-1 w-full relative">
+                                                    {recording && (
+                                                        <div className="text-sm text-red-400 flex items-center gap-2">
+                                                            <span className="relative flex h-2 w-2">
+                                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                                                            </span>
+                                                            Recording in progress...
+                                                        </div>
+                                                    )}
+
+                                                    {/* Preview Player */}
+                                                    {!recording && audioUrl && (
+                                                        <div className="flex items-center gap-4 p-3 rounded-xl bg-white/5 border border-white/5">
+                                                            <button
+                                                                onClick={() => playAudio(audioUrl)}
+                                                                className="p-2 rounded-full bg-white text-black hover:bg-neutral-200 transition-all"
+                                                            >
+                                                                {isPlaying && audioPlayerRef.current.src === audioUrl ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current pl-0.5" />}
+                                                            </button>
+                                                            <div className="flex-1">
+                                                                <div className="h-1 bg-white/10 rounded-full w-full overflow-hidden">
+                                                                    <div className="h-full bg-blue-500 w-1/2" /> {/* Dummy Progress */}
+                                                                </div>
+                                                                <div className="text-[10px] text-neutral-500 mt-1 uppercase tracking-wider">New Recording</div>
+                                                            </div>
+                                                            <button
+                                                                onClick={uploadVoice}
+                                                                className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-xs font-bold uppercase tracking-wider rounded-lg hover:bg-blue-500 transition-all"
+                                                            >
+                                                                <Upload className="w-3 h-3" />
+                                                                Save
+                                                            </button>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Saved Voice Player (if exists and no new recording pending) */}
+                                                    {!recording && !audioUrl && savedAudioUrl && (
+                                                        <div className="flex items-center gap-4 p-3 rounded-xl bg-white/5 border border-white/5">
+                                                            <button
+                                                                onClick={() => playAudio(savedAudioUrl)}
+                                                                className="p-2 rounded-full bg-neutral-800 text-white border border-white/10 hover:bg-neutral-700 transition-all"
+                                                            >
+                                                                {isPlaying && audioPlayerRef.current.src === savedAudioUrl ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current pl-0.5" />}
+                                                            </button>
+                                                            <div className="flex-1">
+                                                                <div className="text-sm text-neutral-300">My Voice Intro</div>
+                                                                <div className="text-[10px] text-neutral-500">Click play to listen to your saved intro.</div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+
                                             </div>
                                         </div>
                                     </section>
