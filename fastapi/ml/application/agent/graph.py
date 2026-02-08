@@ -14,38 +14,24 @@ from .nodes import (
     hunter_node, profiler_node, strategist_node, 
     scribe_node, critic_node
 )
+from .supervisor import supervisor_node
 
-def should_continue(state: AgentState) -> str:
+def route_supervisor(state: AgentState) -> str:
     """
-    The Reflexion Loop Logic.
-    Decides whether to refine the draft or ship it.
+    Reads the supervisor's decision and routes to the next node.
     """
-    critique = state.get("latest_critique")
-    attempts = state.get("revision_count", 0)
-    
-    # 1. Quality Gate: If passed, we are done.
-    if critique and critique.passed:
-        logger.info("✅ CRITIC: Quality threshold met. Finishing.")
-        return END
-    
-    # 2. Safety Valve: Don't loop forever. Max 3 revisions.
-    if attempts >= 3:
-        logger.warning("🛑 CRITIC: Max revisions reached. Finishing anyway.")
-        return END
-    
-    # 3. Otherwise, go back to the drawing board.
-    logger.info("🔄 CRITIC: Sending back for revision.")
-    return "scribe"
+    return state.get("next_step", END)
 
 @lru_cache(maxsize=1)
 def create_agent_graph():
     """
-    Builds the Hierarchical State Graph for the Outreach Agent.
+    Builds the Hierarchical Supervisor-Worker Graph (Hive Mind).
     """
-    logger.info("Initializing Superior Agent Graph...")
+    logger.info("Initializing Hive Mind Agent Graph...")
     workflow = StateGraph(AgentState)
     
     # --- Add Nodes ---
+    workflow.add_node("supervisor", supervisor_node)
     workflow.add_node("hunter", hunter_node)
     workflow.add_node("profiler", profiler_node)
     workflow.add_node("strategist", strategist_node)
@@ -53,48 +39,29 @@ def create_agent_graph():
     workflow.add_node("critic", critic_node)
     
     # --- Define Flow ---
-    # 1. Start with Research
-    workflow.set_entry_point("hunter")
+    # 1. Start at Supervisor
+    workflow.set_entry_point("supervisor")
     
-    # 2. Research -> Psychology (Conditional)
-    def route_after_hunter(state: AgentState) -> str:
-        """
-        Router: If General Mode (no URL), skip Profiler.
-        """
-        prospect = state.get("prospect")
-        if prospect and prospect.name == "User" and prospect.role == "General":
-            logger.info("🔀 ROUTER: General Mode detected. Skipping Profiler.")
-            return "strategist"
-        return "profiler"
-
+    # 2. Supervisor decides where to go
     workflow.add_conditional_edges(
-        "hunter",
-        route_after_hunter,
+        "supervisor",
+        route_supervisor,
         {
+            "hunter": "hunter",
             "profiler": "profiler",
-            "strategist": "strategist"
+            "strategist": "strategist",
+            "scribe": "scribe",
+            "critic": "critic",
+            "end": END
         }
     )
     
-    # 3. Psychology -> Strategy
-    workflow.add_edge("profiler", "strategist")
-    
-    # 4. Strategy -> First Draft
-    workflow.add_edge("strategist", "scribe")
-    
-    # 5. Draft -> Quality Control
-    workflow.add_edge("scribe", "critic")
-    
-    
-    # 6. Conditional Loop (Reflexion)
-    workflow.add_conditional_edges(
-        "critic",
-        should_continue,
-        {
-            "scribe": "scribe", # Feedback Loop: Critic -> Scribe
-            END: END            # Success: Critic -> Finish
-        }
-    )
+    # 3. All workers report back to Supervisor
+    workflow.add_edge("hunter", "supervisor")
+    workflow.add_edge("profiler", "supervisor")
+    workflow.add_edge("strategist", "supervisor")
+    workflow.add_edge("scribe", "supervisor")
+    workflow.add_edge("critic", "supervisor")
     
     return workflow.compile()
 
@@ -103,6 +70,7 @@ def create_agent_graph():
 async def run_agent(
     target_url: str = None, # Made Optional
     user_instruction: str = "Introduce yourself",
+    conversation_history: List[Dict[str, str]] = None,
     **kwargs
 ) -> Dict[str, Any]:
     """
@@ -114,9 +82,10 @@ async def run_agent(
     initial_state = {
         "target_url": target_url,
         "user_instruction": user_instruction,
-        "drafts": [],
+        "drafts": {},
         "revision_count": 0,
-        "logs": []
+        "logs": [],
+        "conversation_history": conversation_history or []
     }
     
     result = await graph.ainvoke(initial_state)
@@ -125,6 +94,7 @@ async def run_agent(
 async def stream_agent(
     user_instruction: str,
     target_url: str = None,
+    conversation_history: List[Dict[str, str]] = None,
     **kwargs
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
@@ -136,29 +106,40 @@ async def stream_agent(
     initial_state = {
         "target_url": target_url,
         "user_instruction": user_instruction,
-        "drafts": [],
+        "drafts": {},
         "revision_count": 0,
-        "logs": []
+        "logs": [],
+        "conversation_history": conversation_history or []
     }
     
     # Stream the graph state
     async for event in graph.astream(initial_state):
         # Event is a dict like {'hunter': {state...}}
         node_name = list(event.keys())[0]
-        state_update = event[node_name]
+        try:
+            state_update = event[node_name]
+        except KeyError:
+             # handle complex graph events if needed
+             continue
         
         # We can yield a format that your frontend expects
         # Here we yield the full state, but you can filter
+        
+        # Helper to get latest draft as string if needed
+        drafts = state_update.get("drafts", {})
+        latest_draft_text = "\n\n".join([f"== {k} ==\n{v}" for k,v in drafts.items()]) if drafts else None
+        
         yield {
             "node": node_name,
             "logs": state_update.get("logs", []),
-            "current_draft": state_update.get("drafts", [""])[-1] if state_update.get("drafts") else None,
-            "final_output": state_update.get("final_output")
+            "current_draft": latest_draft_text,
+            "final_output": state_update.get("final_output") # This is now a Dict
         }
 
 async def stream_agent_events(
     target_url: str,
     user_instruction: str,
+    conversation_history: List[Dict[str, str]] = None,
     **kwargs
 ) -> AsyncGenerator[Any, None]:
     """
@@ -169,9 +150,10 @@ async def stream_agent_events(
     initial_state = {
         "target_url": target_url,
         "user_instruction": user_instruction,
-        "drafts": [],
+        "drafts": {},
         "revision_count": 0,
-        "logs": []
+        "logs": [],
+        "conversation_history": conversation_history or []
     }
     
     async for event in graph.astream_events(initial_state, version="v2"):

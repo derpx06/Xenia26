@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 # --- 1. The Structured Data Models (The "Files") ---
 
 # --- New: Channel Enum ---
-ChannelType = Literal["email", "linkedin_post", "whatsapp", "twitter_thread", "research_report", "general_response"]
+ChannelType = Literal["email", "linkedin_post", "whatsapp", "twitter_thread", "research_report", "general_response", "linkedin_dm", "instagram_dm", "sms"]
 
 class ProspectProfile(BaseModel):
     name: str = Field(description="Full name")
@@ -14,14 +14,22 @@ class ProspectProfile(BaseModel):
     recent_activity: List[str] = Field(default_factory=list)
     raw_bio: str = Field(default="")
     
+    # New fields for better context
+    industry: Optional[str] = Field(default=None)
+    location: Optional[str] = Field(default=None)
+    
 class PsychProfile(BaseModel):
     disc_type: Literal["D", "I", "S", "C"]
     communication_style: str
     tone_instructions: List[str]
+    # New: Captured style rules from writing_style_inferrer
+    style_rules: List[str] = Field(default_factory=list)
 
 class StrategyBrief(BaseModel):
     """The Master Plan - Now Channel Aware"""
-    target_channel: ChannelType = Field(description="The format we are writing for")
+    # Changed: Support multiple channels in one go, or a primary channel
+    target_channels: List[ChannelType] = Field(default=["email"], description="List of channels to generate for")
+    target_channel: ChannelType = Field(default="email", description="Primary channel (deprecated but kept for compat)")
     goal: str = Field(description="The objective (e.g. 'Get a meeting', 'Answer question')")
     hook: str = Field(description="The opening line/concept")
     key_points: List[str] = Field(description="Bullet points to cover")
@@ -37,6 +45,7 @@ class AgentState(TypedDict):
     # Inputs
     target_url: str
     user_instruction: str # CHANGED: Replaces 'user_offer' to be more generic
+    conversation_history: List[Dict[str, str]] # List of messages
     
     # Internal Memory
     prospect: Optional[ProspectProfile]
@@ -44,12 +53,15 @@ class AgentState(TypedDict):
     strategy: Optional[StrategyBrief]
     
     # Drafting
-    drafts: List[str]
+    drafts: Dict[str, str] # Keyed by channel
     latest_critique: Optional[CritiqueResult]
     revision_count: int
     
+    # Hive Mind Routing
+    next_step: Literal["hunter", "profiler", "strategist", "scribe", "critic", "end"]
+    
     # Final Output
-    final_output: Optional[str]
+    final_output: Optional[Dict[str, str]] # Keyed by channel
     logs: List[str]
 
     
@@ -94,7 +106,7 @@ class AgentStreamChunk(BaseModel):
 
 class AgentResponse(BaseModel):
     """Final aggregated response."""
-    response: str
+    response: Dict[str, str] # Changed to Dict for multi-channel
     tool_calls: List[Dict[str, Any]] = Field(default_factory=list)
     iterations: int
     model: str

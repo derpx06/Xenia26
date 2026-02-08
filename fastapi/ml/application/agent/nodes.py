@@ -6,12 +6,18 @@ from ml.settings import settings
 from .schemas import (
     AgentState, ProspectProfile, PsychProfile, StrategyBrief, CritiqueResult, ChannelType
 )
+from .knowledge import SimpleKnowledgeBase
+from .writing_style_inferrer import infer_style_rules
+from agent_style_transfer.schemas import Document
 from ..crawlers.dispatcher import CrawlerDispatcher
 import openai
 
 # --- Configuration ---
 LOGIC_MODEL = settings.LLM_MODEL
 CREATIVE_MODEL = settings.LLM_MODEL 
+
+# Initialize Knowledge Base
+kb = SimpleKnowledgeBase()
 
 # Setup Structured LLM Clients
 try:
@@ -27,14 +33,13 @@ except Exception as e:
     logger.error(f"Failed to initialize LLM clients: {e}. Ensure Ollama is running.")
     raise
 
-# --- Node 1: HUNTER (Smart - Skips if no URL) ---
+# --- Node 1: HUNTER (Smart - KB First, then Scrape) ---
 async def hunter_node(state: AgentState) -> AgentState:
     logger.info("👻 HUNTER: Checking inputs...")
     url = state.get("target_url")
     logs = state.get("logs", [])
     
-    # General Action Bypass: If no URL is provided, skip research.
-    # Also handle "string" which might be passed by default in some test cases
+    # 1. Check for valid URL
     if not url or url == "string" or "http" not in url:
         logs.append("👻 HUNTER: No valid URL provided. Switching to General Mode.")
         return {
@@ -44,26 +49,29 @@ async def hunter_node(state: AgentState) -> AgentState:
             "logs": logs
         }
     
+    # 2. Check Knowledge Base
+    # Simple extraction of name/company from URL is hard without scraping, 
+    # so we might check if we have visited this URL before if we indexed by URL.
+    # For now, we'll proceed to scrape. 
+    # TODO: Implement URL-based lookup in KB if needed.
+    
     try:
         logs.append(f"👻 HUNTER: Analyzing {url}...")
         dispatcher = CrawlerDispatcher()
-        
-        # NOTE: get_crawler is Synchronous
         crawler = dispatcher.get_crawler(url) 
         
-        # Check for async extraction or crawl
+        # Async/Sync Crawl
         if hasattr(crawler, 'aextract'):
             crawl_result = await crawler.aextract(url)
         elif asyncio.iscoroutinefunction(crawler.crawl):
             crawl_result = await crawler.crawl(url)
         else:
-             # Fallback for sync crawl if any
             crawl_result = crawler.crawl(url)
         
         raw_text = crawl_result.markdown if hasattr(crawl_result, 'markdown') else str(crawl_result)
-        truncated_text = raw_text[:6000] 
+        truncated_text = raw_text[:3500] 
         
-        # 2. Extract structured facts using Instructor
+        # 3. Extract structured facts using Instructor
         logger.info("👻 HUNTER: Extracting signals...")
         profile = llm_client.chat.completions.create(
             model=LOGIC_MODEL,
@@ -71,16 +79,20 @@ async def hunter_node(state: AgentState) -> AgentState:
             messages=[
                 {
                     "role": "system", 
-                    "content": "You are an expert lead researcher. Extract key facts. If bio is missing, make best guess from context or leave generic."
+                    "content": "You are an expert lead researcher. Extract key facts. Keep bio concise."
                 },
                 {
                     "role": "user", 
-                    "content": f"Analyze this profile and extract the schema:\n\n{truncated_text}"
+                    "content": f"Extract schema from this text:\n\n{truncated_text}"
                 }
             ],
             max_retries=2
         )
-        logs.append(f"👻 HUNTER: Found {profile.name} at {profile.company}")
+        
+        # 4. Save to KB
+        kb.save_prospect(profile)
+        
+        logs.append(f"👻 HUNTER: Found {profile.name} at {profile.company}. Saved to Knowledge Base.")
         return {"prospect": profile, "logs": logs}
         
     except Exception as e:
@@ -94,60 +106,81 @@ async def hunter_node(state: AgentState) -> AgentState:
             "logs": logs
         }
 
-# --- Node 2: PROFILER (Smart Default) ---
+# --- Node 2: PROFILER (Deep Style Inference) ---
 def profiler_node(state: AgentState) -> AgentState:
-    logger.info("🧠 PROFILER: Analyzing personality...")
+    logger.info("🧠 PROFILER: Analyzing personality & style...")
     prospect: ProspectProfile = state.get("prospect")
     logs = state.get("logs", [])
     
-    # If generic prospect (General Mode), use neutral profile
-    if prospect.name == "User" and not prospect.raw_bio:
+    # Check KB for existing psych profile? (Optional optimization)
+    
+    if (prospect.name == "User" or prospect.name == "Prospect") and not prospect.raw_bio:
         logs.append("🧠 PROFILER: General Mode detected. Using helpful persona.")
         return {
             "psych": PsychProfile(
-                disc_type="C", # Conscientious/Helpful
+                disc_type="C",
                 communication_style="Helpful and Direct", 
-                tone_instructions=["Be helpful", "Be clear", "No fluff", "Provide value"]
+                tone_instructions=["Be helpful", "Be clear", "No fluff"],
+                style_rules=[]
             ),
             "logs": logs
         }
     
+    # Check KB for existing psych profile to save time/cost
+    cached_psych_data = kb.get_psych_profile(prospect.name, prospect.company)
+    if cached_psych_data:
+        logs.append("🧠 PROFILER: Found existing psych profile in KB. Skipping analysis.")
+        return {"psych": PsychProfile(**cached_psych_data), "logs": logs}
+    
     try:
+        # 1. Text Analysis for DISC/Tone
         profile = llm_client.chat.completions.create(
             model=LOGIC_MODEL,
             response_model=PsychProfile,
             messages=[
-                {"role": "system", "content": "You are a behavioral psychologist using the DISC framework. Analyze text for tone, sentence length, and word choice."},
-                {"role": "user", "content": f"Analyze this writing style:\n\n{prospect.raw_bio[:2000]}\n\nDetermine their personality."}
+                {"role": "system", "content": "You are a behavioral psychologist. Analyze text for tone. Keep it brief."},
+                {"role": "user", "content": f"Analyze this writing style:\n\n{prospect.raw_bio[:1500]}\n\nDetermine their personality."}
             ]
         )
+        
+        # 2. Advanced Style Inference using existing module
+        # Create a transient Document object for analysis
+        if prospect.raw_bio:
+            doc = Document(content=prospect.raw_bio, title=f"{prospect.name} Bio")
+            style_rules = infer_style_rules([doc], provider="ollama", model=LOGIC_MODEL)
+            profile.style_rules = style_rules
+            logs.append(f"🧠 PROFILER: Extracted {len(style_rules)} custom style rules.")
+        
+        # Save to KB for future use
+        kb.save_psych_profile(prospect.name, prospect.company, profile)
+        
         logs.append(f"🧠 PROFILER: Identified as Type {profile.disc_type} ({profile.communication_style})")
         return {"psych": profile, "logs": logs}
     except Exception as e:
         logger.error(f"Profiler failed: {e}")
         return {
             "psych": PsychProfile(
-                disc_type="C", communication_style="Professional", tone_instructions=["Be polite"]
+                disc_type="C", communication_style="Professional", 
+                tone_instructions=["Be polite"], style_rules=[]
             ),
             "logs": logs
         }
 
-# --- Node 3: THE STRATEGIST (Channel Logic) ---
+# --- Node 3: THE STRATEGIST (Multi-Channel Logic) ---
 def strategist_node(state: AgentState) -> AgentState:
     """
-    Decides the Channel based on user instruction.
+    Decides the Channel(s) based on user instruction.
     """
     logger.info("♟️ STRATEGIST: Planning attack...")
     prospect: ProspectProfile = state["prospect"]
-    # Handle missing psych profile (General Mode)
-    psych: PsychProfile = state.get("psych") or PsychProfile(
-        disc_type="C", 
-        communication_style="Professional", 
-        tone_instructions=["Be helpful"]
-    )
+    psych: PsychProfile = state.get("psych")
     instruction = state["user_instruction"]
+    history = state.get("conversation_history", [])
     logs = state.get("logs", [])
     
+    # Context string from history (last 3 messages)
+    history_context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in history[-3:]]) if history else "No history."
+
     try:
         strategy = llm_client.chat.completions.create(
             model=LOGIC_MODEL,
@@ -156,36 +189,43 @@ def strategist_node(state: AgentState) -> AgentState:
                 {
                     "role": "system", 
                     "content": """
-                    You are a Strategic Planner. Determine the Target Channel from the instruction.
+                    You are a Strategic Planner. Determine the Target Channel(s) from the instruction.
+                    If the user asks for "outreach" or "contact", consider Email + LinkedIn.
+                    If the user specifies a channel, use that.
                     
-                    DECISION LOGIC:
-                    1. 'email': If user wants to sell/pitch/contact someone specific.
-                    2. 'linkedin_post': If user wants public content/viral posts.
-                    3. 'whatsapp': If user wants casual/direct text messages.
-                    4. 'twitter_thread': If user wants short, threaded content.
-                    5. 'research_report': If user wants deep analysis of a company/url.
-                    6. 'general_response': If user asks a question, wants a summary, or just wants to chat.
+                    Available Channels:
+                    - email: For formal business pitches.
+                    - linkedin_dm: For professional networking.
+                    - linkedin_post: For public engagement.
+                    - whatsapp/sms: For casual/direct contact (use only if requested).
+                    - twitter_thread: For content marketing.
+                    - general_response: For answering questions or clarifications.
                     """
                 },
                 {
                     "role": "user", 
                     "content": f"""
                     INSTRUCTION: "{instruction}"
+                    CONTEXT: {history_context}
                     TARGET: {prospect.role} at {prospect.company}
-                    PSYCH: {psych.disc_type}
                     
-                    Task: Create a StrategyBrief.
+                    Task: Create a StrategyBrief. Select appropriate target_channels.
                     """
                 }
             ]
         )
-        logs.append(f"♟️ STRATEGIST: Channel = {strategy.target_channel}. Goal: {strategy.goal}")
+        
+        # Ensure target_channels is populated
+        if not strategy.target_channels:
+            strategy.target_channels = [strategy.target_channel]
+            
+        logs.append(f"♟️ STRATEGIST: Channels = {strategy.target_channels}. Goal: {strategy.goal}")
         return {"strategy": strategy, "logs": logs}
     except Exception as e:
         logger.error(f"Strategist failed: {e}")
-        # Fallback
         return {
             "strategy": StrategyBrief(
+                target_channels=["general_response"],
                 target_channel="general_response",
                 goal="Answer user",
                 hook="None",
@@ -196,99 +236,133 @@ def strategist_node(state: AgentState) -> AgentState:
             "logs": logs
         }
 
-# --- Node 4: THE SCRIBE (Multi-Channel) ---
+# --- Node 4: THE SCRIBE (Looping Writer) ---
 def scribe_node(state: AgentState) -> AgentState:
     """
-    Writes the content based on channel and strategy.
+    Writes content for ALL selected channels.
     """
     logger.info("✍️ SCRIBE: Drafting content...")
     strategy: StrategyBrief = state["strategy"]
-    psych: PsychProfile = state.get("psych") or PsychProfile(
-        disc_type="C", 
-        communication_style="Professional", 
-        tone_instructions=["Be clear"]
-    )
+    prospect: ProspectProfile = state["prospect"]
+    psych: PsychProfile = state.get("psych")
     critique: CritiqueResult = state.get("latest_critique")
-    drafts = state.get("drafts", [])
+    
+    current_drafts = state.get("drafts", {})
+    history = state.get("conversation_history", [])
     logs = state.get("logs", [])
     
-    # --- Channel Rules ---
-    if strategy.target_channel == "email":
-        rules = "Format: Subject + Body. <150 words. Professional. Clean spacing."
-    elif strategy.target_channel == "linkedin_post":
-        rules = "Format: Viral structure. Short punchy lines. Hashtags at end. No 'Dear Sir'."
-    elif strategy.target_channel == "whatsapp":
-        rules = "Format: Single message. Very casual. No subject line. Short."
-    elif strategy.target_channel == "twitter_thread":
-        rules = "Format: Thread of 3-5 tweets. Numbered 1/5, 2/5 etc. Under 280 chars per tweet."
-    elif strategy.target_channel == "research_report":
-        rules = "Format: Markdown Report. Headers, bullet points, data-heavy. Comprehensive."
-    elif strategy.target_channel == "general_response":
-        rules = "Format: Conversational direct answer. Helpful. Markdown supported. No sales format."
-    else:
-        rules = "Format: Standard professional text."
+    # Context string from history
+    history_context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in history[-5:]]) if history else "No previous conversation."
+    
+    # Fetch similar successful outreach from KB (Vector Search)
+    # We construct a query to find semantically similar past scenarios
+    query_text = f"Outreach to {prospect.role} in {prospect.company} regarding {strategy.goal}"
+    similar_outreach = kb.get_similar_outreach(query_text=query_text, role=prospect.role, limit=2)
+    
+    kb_context = ""
+    if similar_outreach:
+        # Deduplicate content to avoid repetition in prompt
+        unique_examples = list(set([ex['content'] for ex in similar_outreach]))
+        kb_context = "SUCCESSFUL PAST EXAMPLES (Use these as inspiration):\n" + "\n---\n".join(unique_examples)
+    
+    new_drafts = current_drafts.copy()
+    
+    for channel in strategy.target_channels:
+        # Skip if already drafted and valid (unless critiqued)
+        if channel in new_drafts and critique and critique.passed:
+            continue
+            
+        # Define Channel Rules
+        if channel == "email":
+            rules = "Subject Line required. <150 words. Professional but personal."
+        elif channel in ["linkedin_post", "twitter_thread"]:
+            rules = "Viral structure. Hook + Value + CTA. Use hashtags."
+        elif channel in ["whatsapp", "sms"]:
+            rules = "Extremely short. <30 words. Casual. No subject."
+        elif channel == "linkedin_dm":
+            rules = "No subject. Conversational. Ask for permission/connection."
+        elif channel == "general_response":
+            rules = "Helpful direct answer. Markdown allowed."
+        else:
+            rules = "Standard professional text."
 
-    prompt = f"""
-    You are an expert AI writer.
-    
-    TASK: {state['user_instruction']}
-    CHANNEL: {strategy.target_channel}
-    GOAL: {strategy.goal}
-    
-    BLUEPRINT:
-    - Hook: {strategy.hook}
-    - Key Points: {', '.join(strategy.key_points)}
-    - CTA: {strategy.cta}
-    
-    RULES:
-    {rules}
-    
-    TONE:
-    {psych.communication_style}
-    Instructions: {', '.join(psych.tone_instructions)}
-    
-    Output ONLY the content.
-    """
-    
-    if critique and not critique.passed:
-        logger.info(f"✍️ SCRIBE: Rewriting. Feedback: {critique.feedback}")
-        prompt += f"\n\nFIX PREVIOUS ERROR: {critique.feedback}"
+        comments = f"FIX ERROR: {critique.feedback}" if (critique and not critique.passed) else ""
 
-    response = llm_creative.invoke(prompt)
-    content = response.content
-    
-    logs.append("✍️ SCRIBE: Draft generated.")
+        prompt = f"""
+        You are an elite copywriter.
+        
+        TASK: Write a {channel} message.
+        GOAL: {strategy.goal}
+        HOOK: {strategy.hook}
+        KEY POINTS: {', '.join(strategy.key_points)}
+        CTA: {strategy.cta}
+        
+        TARGET PERSONA:
+        Name: {prospect.name}
+        Role: {prospect.role}
+        Style Matches: {psych.communication_style}
+        
+        HISTORY_CONTEXT:
+        {history_context}
+        
+        STYLE RULES (MIMIC THIS):
+        {chr(10).join(psych.style_rules)}
+        
+        {kb_context}
+        
+        PLATFORM RULES:
+        {rules}
+        
+        {comments}
+        
+        IMPORTANT: Use HISTORY_CONTEXT to understand the conversation flow, but do NOT be overly constrained by it. 
+        Your primary guide is the GOAL and STRATEGY. 
+        If the history is irrelevant to the current goal, pivot gracefully.
+        
+        Output ONLY the message content.
+        """
+        
+        try:
+            response = llm_creative.invoke(prompt)
+            new_drafts[channel] = response.content
+            logs.append(f"✍️ SCRIBE: Drafted {channel}.")
+        except Exception as e:
+            logger.error(f"Scribe failed for {channel}: {e}")
+            new_drafts[channel] = f"[Error: Failed to generate draft for {channel} due to LLM error: {str(e)}]"
+            logs.append(f"✍️ SCRIBE: Failed to draft {channel}.")
+
     return {
-        "drafts": drafts + [content], 
+        "drafts": new_drafts, 
         "revision_count": state.get("revision_count", 0) + 1,
-        "final_output": content,
+        "final_output": new_drafts, # Update final output
+        "latest_critique": None, # Reset critique so Supervisor knows to send to Critic
         "logs": logs
     }
 
-# --- Node 5: THE CRITIC (Relaxed for General) ---
+# --- Node 5: THE CRITIC (Dictionary Aware) ---
 def critic_node(state: AgentState) -> AgentState:
     """
-    Evaluates the draft. Auto-approves general responses.
+    Evaluates the drafts.
     """
     logger.info("⚖️ CRITIC: Judging work...")
     strategy = state["strategy"]
-    latest_draft = state["drafts"][-1]
-    # Handle missing psych profile (General Mode)
-    psych: PsychProfile = state.get("psych") or PsychProfile(
-        disc_type="C", 
-        communication_style="Professional", 
-        tone_instructions=["Be clear"]
-    )
+    drafts = state["drafts"]
+    psych: PsychProfile = state.get("psych")
     logs = state.get("logs", [])
     
-    # Bypass criticism for general chat to speed it up
-    if strategy.target_channel == "general_response":
+    # Auto-pass general response
+    if "general_response" in strategy.target_channels:
         logs.append("⚖️ CRITIC: General response auto-approved.")
         return {
             "latest_critique": CritiqueResult(score=10, feedback="Pass", passed=True),
             "logs": logs
         }
-        
+
+    # Critiques the FIRST drafted channel for now to keep logic simple
+    # Ideally should critique all, but we limit complexity.
+    target = strategy.target_channels[0]
+    latest_draft = drafts.get(target, "")
+    
     try:
         critique = llm_client.chat.completions.create(
             model=LOGIC_MODEL,
@@ -301,23 +375,25 @@ def critic_node(state: AgentState) -> AgentState:
                 {
                     "role": "user", 
                     "content": f"""
-                    TARGET STRATEGY:
-                    Channel: {strategy.target_channel}
-                    Hook: {strategy.hook}
-                    Tone: {psych.communication_style}
-                    
+                    CHANNEL: {target}
+                    INTENDED TONE: {psych.communication_style}
                     DRAFT:
                     {latest_draft}
                     
                     Evaluate:
                     1. Fit for channel?
-                    2. Uses hook?
-                    3. Human tone?
+                    2. Matches prospect's likely style?
+                    3. Not spammy?
                     """
                 }
             ]
         )
-        logs.append(f"⚖️ CRITIC: Score {critique.score}/10. Passed: {critique.passed}")
+        logs.append(f"⚖️ CRITIC: Score {critique.score}/10 on {target}. Passed: {critique.passed}")
+        
+        # If passed, save to KB as "good example" (optimistic)
+        if critique.passed:
+            kb.save_outreach(state["prospect"], strategy, latest_draft)
+            
         return {"latest_critique": critique, "logs": logs}
         
     except Exception as e:
