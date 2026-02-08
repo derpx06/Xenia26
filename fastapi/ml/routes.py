@@ -211,11 +211,20 @@ async def agent_chat_sync(request: AgentRequest):
         }
     """
     try:
-        result = run_agent(
-            message=request.message,
-            model=request.model,
-            conversation_history=[msg.model_dump() for msg in request.conversation_history],
-            max_iterations=request.max_iterations
+        # Extract target_url and user_instruction
+        import re
+        url_pattern = r'https?://[^\s]+'
+        urls = re.findall(url_pattern, request.message)
+        if urls:
+            target_url = urls[0]
+            user_instruction = request.message.replace(target_url, "").strip() or "Analyze this"
+        else:
+            target_url = None
+            user_instruction = request.message
+
+        result = await run_agent(
+            target_url=target_url,
+            user_instruction=user_instruction
         )
         
         # Extract tool calls from messages

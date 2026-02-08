@@ -326,37 +326,98 @@ export default function OutreachChat() {
                 <div key={i} className={`flex w-full ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                   <div className={`flex flex-col max-w-2xl ${msg.role === "user" ? "items-end" : "items-start"} w-full`}>
 
-                    {/* PROCESS BOX (Tool Calls / Thoughts) */}
+                    {/* PROCESS BOX (Agent Journey) */}
                     {msg.role === 'assistant' && (
                       (msg.tool_calls?.length > 0 || msg.tool_results?.length > 0 || msg.thoughts?.length > 0) && (
-                        <div className="mb-2 w-full max-w-2xl flex flex-col gap-2 p-4 bg-zinc-900/80 border border-zinc-700/50 rounded-2xl shadow-sm overflow-hidden animate-in fade-in zoom-in-95 backdrop-blur-sm">
-                          <div className="flex items-center gap-2 mb-1 pb-2 border-b border-white/5">
-                            <div className="size-1.5 bg-indigo-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
-                            <span className="text-[10px] font-black uppercase tracking-widest not-italic text-zinc-500">Agent Process</span>
+                        <div className="mb-4 w-full max-w-2xl flex flex-col gap-0 bg-[#0F0F0F] border border-white/5 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 backdrop-blur-md">
+
+                          {/* 1. HEADER & PROGRESS STEPS */}
+                          <div className="p-4 border-b border-white/5 bg-[#141414]">
+                            <div className="flex items-center gap-2 mb-4">
+                              <div className="relative flex h-2 w-2">
+                                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isStreaming ? 'bg-orange-400' : 'bg-green-400'}`}></span>
+                                <span className={`relative inline-flex rounded-full h-2 w-2 ${isStreaming ? 'bg-orange-500' : 'bg-green-500'}`}></span>
+                              </div>
+                              <span className="text-xs font-bold uppercase tracking-widest text-zinc-400">
+                                {isStreaming ? "Agent Active" : "Process Complete"}
+                              </span>
+                            </div>
+
+                            {/* Stepper */}
+                            <div className="flex justify-between items-center px-1">
+                              {['HUNTER', 'PROFILER', 'STRATEGIST', 'SCRIBE', 'CRITIC'].map((step, idx) => {
+                                // Check if this step is active or done based on thoughts
+                                // We check if any thought starts with [STEP]
+                                const isStepActive = msg.thoughts?.some(t => t.toUpperCase().includes(`[${step}]`));
+                                return (
+                                  <div key={step} className="flex flex-col items-center gap-2 relative z-10 group">
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all duration-500 ${isStepActive
+                                        ? "bg-purple-600 border-purple-400 text-white shadow-[0_0_15px_rgba(147,51,234,0.5)]"
+                                        : "bg-zinc-900 border-zinc-800 text-zinc-600"
+                                      }`}>
+                                      {idx === 0 && <span className="text-xs">👻</span>}
+                                      {idx === 1 && <span className="text-xs">🧠</span>}
+                                      {idx === 2 && <span className="text-xs">♟️</span>}
+                                      {idx === 3 && <span className="text-xs">✍️</span>}
+                                      {idx === 4 && <span className="text-xs">⚖️</span>}
+                                    </div>
+                                    <span className={`text-[10px] font-bold tracking-wider transition-colors duration-300 ${isStepActive ? "text-purple-300" : "text-zinc-700"}`}>
+                                      {step}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                              {/* Connector Line (Background) */}
+                              <div className="absolute left-6 right-6 top-[70px] h-0.5 bg-zinc-800 -z-0 hidden md:block" />
+                            </div>
                           </div>
 
-                          {/* Thoughts */}
-                          {msg.thoughts?.map((thought, tIdx) => (
-                            <div key={`thought-${tIdx}`} className="italic text-zinc-400 text-sm pl-2 border-l-2 border-zinc-700/50 my-1">
-                              {thought}
-                            </div>
-                          ))}
+                          {/* 2. LIVE TERMINAL LOGS */}
+                          <div className="p-3 bg-black/50 font-mono text-[11px] h-48 overflow-y-auto custom-scrollbar flex flex-col-reverse">
+                            {/* Reverse parsing to show latest at bottom if we used flex-col, but flex-col-reverse keeps bottom anchored */}
+                            <div className="flex flex-col gap-1">
+                              {(msg.thoughts || []).map((thought, tIdx) => {
+                                // Extract Node Name if present
+                                const match = thought.match(/^\[(\w+)\]\s*(.*)/);
+                                const node = match ? match[1] : null;
+                                const content = match ? match[2] : thought;
 
-                          {/* Tool Calls */}
-                          {msg.tool_calls?.length > 0 && (
-                            <ToolCalls toolCalls={msg.tool_calls} />
-                          )}
+                                let colorClass = "text-zinc-500";
+                                if (node === 'HUNTER') colorClass = "text-blue-400";
+                                if (node === 'PROFILER') colorClass = "text-pink-400";
+                                if (node === 'STRATEGIST') colorClass = "text-yellow-400";
+                                if (node === 'SCRIBE') colorClass = "text-purple-400";
+                                if (node === 'CRITIC') colorClass = "text-red-400";
 
-                          {/* Tool Results */}
-                          {msg.tool_results?.map((res, rIdx) => (
-                            <div key={`res-${rIdx}`} className="mt-2">
-                              <div className="flex items-center gap-2 mb-1">
-                                <div className="size-1.5 bg-emerald-500 rounded-full" />
-                                <span className="text-[10px] font-bold uppercase text-emerald-500/80">Result</span>
-                              </div>
-                              <ToolResult message={res} />
+                                return (
+                                  <div key={tIdx} className="break-words leading-relaxed border-l-2 border-white/5 pl-2 hover:bg-white/5 transition-colors p-1 rounded-r-md">
+                                    {node && (
+                                      <span className={`${colorClass} font-bold mr-2 opacity-80`}>
+                                        {node}:
+                                      </span>
+                                    )}
+                                    <span className="text-zinc-300 opacity-90">{content}</span>
+                                  </div>
+                                );
+                              })}
+
+                              {/* Tools */}
+                              {msg.tool_calls?.map((tc, tcIdx) => (
+                                <div key={`tc-${tcIdx}`} className="text-cyan-400 pl-2 border-l-2 border-cyan-500/30 py-1">
+                                  <span className="opacity-50 mr-2">TOOL:</span>
+                                  {tc.name}({JSON.stringify(tc.args).slice(0, 50)}...)
+                                </div>
+                              ))}
+
+                              {/* Results */}
+                              {msg.tool_results?.map((tr, trIdx) => (
+                                <div key={`tr-${trIdx}`} className="text-emerald-400 pl-2 border-l-2 border-emerald-500/30 py-1">
+                                  <span className="opacity-50 mr-2">RESULT:</span>
+                                  Done.
+                                </div>
+                              ))}
                             </div>
-                          ))}
+                          </div>
                         </div>
                       )
                     )}

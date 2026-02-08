@@ -5,7 +5,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-env_path = Path(__file__).parent.parent / '.env'
+# Load environment variables from .env file
+# Adjusted to look in the current directory or parent directories if needed
+env_path = Path(__file__).resolve().parent.parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
 

@@ -39,7 +39,7 @@ dependencies = [
     "datasets>=4.5.0",
     "instructor",
     "soundfile",
-
+    "grandalf"
 ]
 
 [dependency-groups]
