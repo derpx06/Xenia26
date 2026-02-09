@@ -6,6 +6,7 @@ import { ToolCalls, ToolResult } from "../components/thread/messages/tool-calls"
 import { EmailPreviewCard } from "../components/thread/messages/EmailPreviewCard";
 import { WhatsAppPreviewCard } from "../components/thread/messages/WhatsAppPreviewCard";
 import { LinkedInPreviewCard } from "../components/thread/messages/LinkedInPreviewCard";
+import ContactInputStep from "../components/ContactInputStep";
 
 
 // --- FRIEND'S ARCHITECTURE IMPORTS ---
@@ -472,31 +473,14 @@ export default function OutreachChat() {
 
                             {/* STEP 2: INPUT (After clicking OK/Proceed) */}
                             {activeSendFlow.step === 'input' && (
-                              <div className="glass-panel p-2 rounded-xl flex items-center gap-2 animate-in zoom-in-95 max-w-md mb-2">
-                                <input
-                                  autoFocus
-                                  placeholder={
-                                    activeSendFlow.type === 'email' ? "Enter Email address..." :
-                                      activeSendFlow.type === 'whatsapp' ? "Enter Phone number..." :
-                                        "Enter Recipient Name/URL..."
-                                  }
-                                  className="bg-transparent border-none outline-none text-sm text-white px-2 flex-1"
-                                  value={activeSendFlow.value || ''}
-                                  onChange={(e) => setActiveSendFlow({ ...activeSendFlow, value: e.target.value })}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && activeSendFlow.value) {
-                                      executeSend(activeSendFlow.value, msg.content, msg.content); // Simplified arg passing
-                                    }
-                                  }}
-                                />
-                                <button
-                                  onClick={() => activeSendFlow.value && executeSend(activeSendFlow.value, msg.content, msg.content)}
-                                  className="bg-purple-600 hover:bg-purple-500 text-white p-2 rounded-lg"
-                                >
-                                  {loadingAction ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                                </button>
-                              </div>
-                            )}
+                              <ContactInputStep
+                                activeSendFlow={activeSendFlow}
+                                setActiveSendFlow={setActiveSendFlow}
+                                executeSend={(val) => executeSend(val, msg.content, msg.content)}
+                                loadingAction={loadingAction}
+                              />
+                            )}{/* STEP 2: INPUT (After clicking OK/Proceed) */}
+
                           </div>
                         ) : (
                           <div className="flex gap-2">
