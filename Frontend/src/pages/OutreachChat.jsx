@@ -3,6 +3,10 @@ import { Send, Mail, Phone, X, Bot, Loader2, ArrowRight, Sparkles, Zap, MessageS
 import Sidebar from "../components/Sidebar";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 import { ToolCalls, ToolResult } from "../components/thread/messages/tool-calls";
+import { EmailPreviewCard } from "../components/thread/messages/EmailPreviewCard";
+import { WhatsAppPreviewCard } from "../components/thread/messages/WhatsAppPreviewCard";
+import { LinkedInPreviewCard } from "../components/thread/messages/LinkedInPreviewCard";
+
 
 // --- FRIEND'S ARCHITECTURE IMPORTS ---
 import { Thread } from "../components/thread/Thread";
@@ -37,34 +41,27 @@ export default function OutreachChat() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent, activeSendFlow, hasStarted]);
 
-  // --- ACTIONS (Email/WhatsApp) ---
-  const handleSendAction = async (msgIndex, content) => {
-    if (!activeSendFlow) return;
-    const target = activeSendFlow.value;
-    const type = activeSendFlow.type;
-    let cleanText = content.replace(/[*#_`]/g, '').trim();
+  // --- ACTIONS (Email/WhatsApp/LinkedIn) ---
+  const handleSendAction = async (msgIndex, content, type) => {
+    setActiveSendFlow({ msgIndex, type, content, step: 'preview', value: '' });
+  };
 
-    if (!target) return alert(`Please enter a ${type === 'email' ? 'valid email' : 'phone number'}`);
+  const executeSend = async (target, subjectOrText, bodyText) => {
     setLoadingAction(true);
+    const type = activeSendFlow?.type;
 
     try {
       if (type === 'whatsapp') {
         const cleanPhone = target.replace(/[^0-9]/g, '');
-        const waLink = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(cleanText)}`;
+        // subjectOrText here is the message body for WA
+        const waLink = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(subjectOrText)}`;
         window.open(waLink, '_blank');
         setActiveSendFlow(null);
-      }
-      else if (type === 'email') {
-        let subject = "Quick Question";
-        const subjectMatch = cleanText.match(/Subject:\s*(.+)/i);
-        if (subjectMatch) {
-          subject = subjectMatch[1].trim();
-          cleanText = cleanText.replace(/Subject:.*\n*/i, '').trim();
-        }
+      } else if (type === 'email') {
         const res = await fetch(`${BACKEND_API_URL}/send/email`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ to: target, subject: subject, text: cleanText })
+          body: JSON.stringify({ to: target, subject: subjectOrText, text: bodyText })
         });
         if (res.ok) {
           alert(`✅ Email sent to ${target}!`);
@@ -73,16 +70,20 @@ export default function OutreachChat() {
           const data = await res.json();
           alert(`❌ Failed: ${data.message}`);
         }
+      } else if (type === 'linkedin') {
+        // LinkedIn simulation or actual API if available
+        const linkedInUrl = `https://www.linkedin.com/messaging/compose/?recipient=${encodeURIComponent(target)}&body=${encodeURIComponent(subjectOrText)}`;
+        window.open(linkedInUrl, '_blank');
+        setActiveSendFlow(null);
       }
     } catch (err) {
       console.error(err);
-      alert("Error connecting to server.");
+      alert("Error executing action.");
     } finally {
       setLoadingAction(false);
     }
   };
 
-  // --- AUDIO GENERATION (TTS) ---
   const handleGenerateAudio = (text) => {
     if (!text) return;
 
@@ -352,8 +353,8 @@ export default function OutreachChat() {
                                 return (
                                   <div key={step} className="flex flex-col items-center gap-2 relative z-10 group">
                                     <div className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all duration-500 ${isStepActive
-                                        ? "bg-purple-600 border-purple-400 text-white shadow-[0_0_15px_rgba(147,51,234,0.5)]"
-                                        : "bg-zinc-900 border-zinc-800 text-zinc-600"
+                                      ? "bg-purple-600 border-purple-400 text-white shadow-[0_0_15px_rgba(147,51,234,0.5)]"
+                                      : "bg-zinc-900 border-zinc-800 text-zinc-600"
                                       }`}>
                                       {idx === 0 && <span className="text-xs">👻</span>}
                                       {idx === 1 && <span className="text-xs">🧠</span>}
@@ -438,29 +439,79 @@ export default function OutreachChat() {
                     {msg.role === 'assistant' && (
                       <div className="mt-3 w-full pl-1">
                         {activeSendFlow?.msgIndex === i ? (
-                          <div className="glass-panel p-2 rounded-xl flex items-center gap-2 animate-in zoom-in-95 max-w-md">
-                            <input
-                              autoFocus
-                              placeholder={activeSendFlow.type === 'email' ? "Email address..." : "Phone number..."}
-                              className="bg-transparent border-none outline-none text-sm text-white px-2 flex-1"
-                              value={activeSendFlow.value}
-                              onChange={(e) => setActiveSendFlow({ ...activeSendFlow, value: e.target.value })}
-                              onKeyDown={(e) => e.key === 'Enter' && handleSendAction(i, msg.content)}
-                            />
-                            <button onClick={() => handleSendAction(i, msg.content)} className="bg-purple-600 hover:bg-purple-500 text-white p-2 rounded-lg">
-                              {loadingAction ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-                            </button>
+                          <div className="w-full mt-4 animate-in slide-in-from-bottom-2 duration-300">
+                            {/* STEP 1: PREVIEW (Read Only) */}
+                            {activeSendFlow.step === 'preview' && (
+                              <>
+                                {activeSendFlow.type === 'email' && (
+                                  <EmailPreviewCard
+                                    content={msg.content}
+                                    previewMode={true}
+                                    onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
+                                    onCancel={() => setActiveSendFlow(null)}
+                                  />
+                                )}
+                                {activeSendFlow.type === 'whatsapp' && (
+                                  <WhatsAppPreviewCard
+                                    content={msg.content}
+                                    previewMode={true}
+                                    onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
+                                    onCancel={() => setActiveSendFlow(null)}
+                                  />
+                                )}
+                                {activeSendFlow.type === 'linkedin' && (
+                                  <LinkedInPreviewCard
+                                    content={msg.content}
+                                    previewMode={true}
+                                    onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
+                                    onCancel={() => setActiveSendFlow(null)}
+                                  />
+                                )}
+                              </>
+                            )}
+
+                            {/* STEP 2: INPUT (After clicking OK/Proceed) */}
+                            {activeSendFlow.step === 'input' && (
+                              <div className="glass-panel p-2 rounded-xl flex items-center gap-2 animate-in zoom-in-95 max-w-md mb-2">
+                                <input
+                                  autoFocus
+                                  placeholder={
+                                    activeSendFlow.type === 'email' ? "Enter Email address..." :
+                                      activeSendFlow.type === 'whatsapp' ? "Enter Phone number..." :
+                                        "Enter Recipient Name/URL..."
+                                  }
+                                  className="bg-transparent border-none outline-none text-sm text-white px-2 flex-1"
+                                  value={activeSendFlow.value || ''}
+                                  onChange={(e) => setActiveSendFlow({ ...activeSendFlow, value: e.target.value })}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && activeSendFlow.value) {
+                                      executeSend(activeSendFlow.value, msg.content, msg.content); // Simplified arg passing
+                                    }
+                                  }}
+                                />
+                                <button
+                                  onClick={() => activeSendFlow.value && executeSend(activeSendFlow.value, msg.content, msg.content)}
+                                  className="bg-purple-600 hover:bg-purple-500 text-white p-2 rounded-lg"
+                                >
+                                  {loadingAction ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                </button>
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div className="flex gap-2">
-                            <button onClick={() => setActiveSendFlow({ msgIndex: i, type: 'email', value: '' })} className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-purple-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
+                            <button onClick={() => handleSendAction(i, msg.content, 'email')} className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-purple-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
                               <Mail className="w-3 h-3" /> Email
                             </button>
-                            <button onClick={() => setActiveSendFlow({ msgIndex: i, type: 'whatsapp', value: '' })} className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-green-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
+                            <button onClick={() => handleSendAction(i, msg.content, 'whatsapp')} className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-green-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
                               <Phone className="w-3 h-3" /> WhatsApp
                             </button>
+                            <button onClick={() => handleSendAction(i, msg.content, 'linkedin')} className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-700/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
+                              {/* Using Map icon temporarily for LinkedIn or text, reusing generic icon if needed, but text is clearer */}
+                              <span className="font-bold text-[10px] bg-blue-600 text-white px-1 rounded">in</span> LinkedIn
+                            </button>
                             <button onClick={() => handleGenerateAudio(msg.content)} className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
-                              <Volume2 className="w-3 h-3" /> Generate Audio
+                              <Volume2 className="w-3 h-3" /> Audio
                             </button>
                           </div>
                         )}
