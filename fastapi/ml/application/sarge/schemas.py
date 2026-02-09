@@ -17,8 +17,11 @@ class AgentState(TypedDict):
     critic_feedback: Optional[dict] # NEW: Structured feedback
     generation_attempts: int        # NEW: Track self-correction loops
     rag_context: List[str]
+    requested_channels: List[str]   # NEW: Channels requested by user (email, linkedin, whatsapp)
+    news_context: Optional[str]     # NEW: News jacking context (DDG search results)
+    writing_style: Optional[dict]   # NEW: Inferred writing style (rules + examples)
     generated_content: dict
-    conversation_history: List[str]
+    conversation_history: List[dict]
 
 
 class RouterOutput(BaseModel):
@@ -49,6 +52,10 @@ class ProspectProfile(BaseModel):
         default_factory=list,
         description="Key topics or interests mentioned"
     )
+    research_queries: List[str] = Field(
+        default_factory=list,
+        description="Specific technical topics or search queries to research (e.g., ['CUDA-X edge optimization', 'NVIDIA earnings 2026'])"
+    )
 
 
 class GeneratedContent(BaseModel):
@@ -56,6 +63,7 @@ class GeneratedContent(BaseModel):
     email: Optional[str] = Field(None, description="Cold email content")
     linkedin: Optional[str] = Field(None, description="LinkedIn DM (max 300 chars)")
     whatsapp: Optional[str] = Field(None, description="WhatsApp message")
+    audio_path: Optional[str] = Field(None, description="Path to the generated audio version of the outreach")
 
 
 class StrategyBrief(BaseModel):
@@ -68,8 +76,9 @@ class StrategyBrief(BaseModel):
 
 class CriticFeedback(BaseModel):
     """Feedback from Critic node for self-correction"""
-    score: int = Field(ge=1, le=10, description="Quality score from 1-10")
+    score: int = Field(ge=1, le=10, description="OVERALL QUALITY SCORE (1-10). Mandatory field.")
+    channel_scores: Optional[dict] = Field(default={}, description="Specific scores per channel (e.g. {'email': 9, 'linkedin': 5})")
     critique: str = Field(description="Detailed feedback on how to improve the outreach")
     additions: List[str] = Field(default_factory=list, description="Specific phrases or details to ADD for hyperpersonalization")
     removals: List[str] = Field(default_factory=list, description="Specific phrases or sections to REMOVE")
-    is_ready: bool = Field(description="Whether the content is ready for the user (score >= 8)")
+    is_ready: bool = Field(description="Whether the content is ready for the user (score >= 8 or all channels valid)")

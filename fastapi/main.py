@@ -11,6 +11,7 @@ if not os.environ.get("USER_AGENT"):
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 from ml.routes import router as ml_router
 
@@ -46,6 +47,9 @@ app.add_middleware(
 
 # Include ML router
 app.include_router(ml_router)
+
+# Serve static files for audio drafts
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 def read_root():

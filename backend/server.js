@@ -1,4 +1,6 @@
+console.log("🏁 Starting server.js...");
 require("dotenv").config();
+console.log("✅ Dotenv loaded");
 const express = require("express");
 const cors = require("cors");
 const connectDB = require("./config/db");
@@ -12,7 +14,9 @@ const userRoutes = require("./routes/user");
 const app = express();
 
 // Connect DB
+console.log("🔌 Connecting to DB...");
 connectDB();
+console.log("🛰️ DB connection initiated (async)");
 
 // Middleware
 app.use(cors({
@@ -22,10 +26,12 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // --- ROUTES ---
+console.log("🛣️ Setting up routes...");
 app.use("/api/auth", authRoutes);
 app.use('/api/contacts', contactRoutes);
 app.use("/api/send", sendRoute);
 app.use("/api/user", userRoutes);
+console.log("✅ Routes set up");
 
 // Profile routes moved to routes/user.js
 

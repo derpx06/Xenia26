@@ -6,7 +6,10 @@ from urllib.parse import urlparse
 import re
 
 from langchain_core.tools import tool
-from duckduckgo_search import DDGS
+import warnings
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=RuntimeWarning, message="This package")
+    from duckduckgo_search import DDGS
 from loguru import logger
 from ml.application.crawlers.dispatcher import CrawlerDispatcher
 from ml.application.crawlers.linkedin import LinkedInCrawler

@@ -42,10 +42,39 @@ class CrawlerDispatcher:
         self._crawlers[r"https://(www\.)?{}/*".format(re.escape(domain))] = crawler
 
     def get_crawler(self, url: str) -> BaseCrawler:
-        for pattern, crawler in self._crawlers.items():
-            if re.match(pattern, url):
-                return crawler()
-        else:
-            logger.warning(f"No crawler found for {url}. Defaulting to CustomArticleCrawler.")
+        # Check cache first
+        from .cache import CrawlerCache
+        cache = CrawlerCache()
+        cached_content = cache.get(url)
+        
+        if cached_content:
+            logger.info(f"🕸️ CRAWLER: Found cached content for {url}")
+            # Return a dummy crawler that just returns the cached content
+            from .base import BaseCrawler
+            class CachedCrawler(BaseCrawler):
+                def extract(self, link: str, **kwargs):
+                    return cached_content
+            return CachedCrawler()
 
-            return CustomArticleCrawler()
+        # If not cached, find the right crawler
+        crawler_instance = None
+        for pattern, crawler_cls in self._crawlers.items():
+            if re.match(pattern, url):
+                crawler_instance = crawler_cls()
+                break
+        
+        if not crawler_instance:
+            logger.warning(f"No crawler found for {url}. Defaulting to CustomArticleCrawler.")
+            crawler_instance = CustomArticleCrawler()
+            
+        # Wrap the crawler to save to cache after extraction
+        original_extract = crawler_instance.extract
+        
+        def extract_with_cache(link: str, **kwargs):
+            content = original_extract(link, **kwargs)
+            if content:
+                cache.save(link, content)
+            return content
+            
+        crawler_instance.extract = extract_with_cache
+        return crawler_instance

@@ -1,17 +1,24 @@
 
 import React, { useState } from 'react';
-import { X, Minimize2, Maximize2, Paperclip, Link, Smile, User, MoreVertical, Trash2, Send, Loader2, ArrowRight } from 'lucide-react';
+import { X, Minimize2, Maximize2, Paperclip, Link, Smile, User, MoreVertical, Trash2, Send, Loader2, ArrowRight, Volume2 } from 'lucide-react';
 
-export function EmailPreviewCard({ content, onSend, onCancel, defaultTo = "", previewMode = false, onProceed }) {
+export function EmailPreviewCard({ content, onSend, onCancel, defaultTo = "", previewMode = false, onProceed, audioPath, onConvertAudio, isAudioLoading }) {
     const [to, setTo] = useState(defaultTo);
-    const [subject, setSubject] = useState(() => {
-        const match = content.match(/Subject:\s*(.+)/i);
-        return match ? match[1].trim() : "Quick Question";
-    });
-    const [body, setBody] = useState(() => {
-        return content.replace(/Subject:.*\n*/i, '').trim();
-    });
+    const [subject, setSubject] = useState("");
+    const [body, setBody] = useState("");
     const [isSending, setIsSending] = useState(false);
+
+    // Sync state with content prop (for streaming)
+    React.useEffect(() => {
+        if (content) {
+            const match = content.match(/Subject:\s*[:]*\s*(.+)/i);
+            const newSubject = match ? match[1].trim() : "Quick Question";
+            const newBody = content.replace(/Subject:.*\n*/i, '').trim();
+
+            setSubject(newSubject);
+            setBody(newBody);
+        }
+    }, [content]);
 
     const handleAction = async () => {
         if (previewMode) {
@@ -95,6 +102,31 @@ export function EmailPreviewCard({ content, onSend, onCancel, defaultTo = "", pr
                     <Trash2 className="w-4 h-4 cursor-pointer hover:text-gray-600" onClick={onCancel} />
                 </div>
             </div>
+
+            {/* Audio Section */}
+            {(audioPath || previewMode) && (
+                <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3 flex-1">
+                        {!audioPath ? (
+                            <button
+                                onClick={onConvertAudio}
+                                disabled={isAudioLoading}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-xs font-bold transition-colors border border-purple-200 disabled:opacity-50"
+                            >
+                                {isAudioLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Volume2 className="w-4 h-4" />}
+                                {isAudioLoading ? "Converting..." : "Convert to Audio"}
+                            </button>
+                        ) : (
+                            <audio
+                                src={`http://localhost:8000${audioPath}`}
+                                controls
+                                className="h-8 w-full max-w-xs scale-90 origin-left"
+                            />
+                        )}
+                        <span className="text-[10px] text-gray-400 font-medium">XTTS v2 Premium Draft</span>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

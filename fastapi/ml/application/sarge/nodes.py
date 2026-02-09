@@ -9,11 +9,42 @@ from ..agent.knowledge import SimpleKnowledgeBase
 import instructor
 import openai
 import asyncio
+import re
 from typing import Optional, List
+from ..agent.tools import duckduckgo_search, scrape_article, wikipedia_search
+from agent_style_transfer.writing_style_inferrer import infer_style_rules, infer_few_shot_examples
+from agent_style_transfer.schemas import Document
+from .tts_engine import XTTSEngine
+import uuid
+
+
+# Global KB singleton to prevent socket/file leaks
+_kb = None
+def get_kb():
+    global _kb
+    if _kb is None:
+        _kb = SimpleKnowledgeBase()
+    return _kb
+
+
+# Global TTS singleton to avoid reloading models (DANGEROUS: RAM HEAVY)
+_tts = None
+def get_tts():
+    global _tts
+    if _tts is None:
+        # Check if assets/speaker.wav exists for cloning, otherwise use default
+        speaker_wav = "assets/speaker.wav"
+        import os
+        if not os.path.exists(speaker_wav) or os.path.getsize(speaker_wav) == 0:
+            speaker_wav = None
+            logger.warning("🎙️ TTS: No speaker.wav found in assets/, using default voice.")
+            
+        _tts = XTTSEngine(speaker_wav=speaker_wav)
+    return _tts
 
 
 @traceable(name="SARGE Chat Node")
-def chat_node(state: AgentState) -> AgentState:
+async def chat_node(state: AgentState) -> AgentState:
     """
     Fast conversational responses
     Preset C: Temperature 0.7, Text output
@@ -25,7 +56,15 @@ def chat_node(state: AgentState) -> AgentState:
     
     # Build conversation context
     history = state.get("conversation_history", [])
-    context = "\n".join(history[-3:]) if history else ""
+    context = ""
+    if history:
+        for msg in history[-3:]:
+             if isinstance(msg, dict):
+                 role = msg.get('role', 'unknown').capitalize()
+                 content = msg.get('content', '')
+                 context += f"{role}: {content}\n"
+             else:
+                 context += str(msg) + "\n"
     
     prompt = f"""You are a helpful Cold Outreach Assistant.
 
@@ -42,10 +81,10 @@ Respond briefly and helpfully in the context of cold outreach ONLY."""
         response = engine.creative.invoke(prompt)
         
         # Update conversation history
-        new_history = history + [
-            f"User: {state['raw_input']}",
-            f"Assistant: {response.content}"
-        ]
+        new_message_user = {"role": "user", "content": state['raw_input']}
+        new_message_assistant = {"role": "assistant", "content": response.content}
+        
+        new_history = history + [new_message_user, new_message_assistant]
         
         logger.info(f"💬 CHAT: Response generated ({len(response.content)} chars)")
         
@@ -60,8 +99,57 @@ Respond briefly and helpfully in the context of cold outreach ONLY."""
         }
 
 
+@traceable(name="SARGE Style Inferrer Node")
+async def style_inferrer_node(state: AgentState) -> AgentState:
+    """
+    Detect and infer writing style from reference URLs or text
+    """
+    raw_input = state.get("raw_input", "")
+    logger.info("🎨 STYLE: Checking for style references")
+    
+    # Simple regex to find URLs
+    urls = re.findall(r'(https?://[^\s]+)', raw_input)
+    
+    if not urls:
+        return {"writing_style": None}
+    
+    ref_url = urls[0]
+    logger.info(f"🎨 STYLE: Inferring style from {ref_url}")
+    
+    try:
+        # 1. Scrape the content
+        content = await scrape_article.ainvoke({"url": ref_url})
+        
+        # 2. Create a Document object
+        doc = Document(
+            url=ref_url,
+            content=content,
+            title="Style Reference",
+            type="Blog", # Defaulting
+            category="Professional"
+        )
+        
+        # 3. Infer style using our specialized tool
+        # Run sync functions in thread to keep event loop responsive
+        rules = await asyncio.to_thread(infer_style_rules, [doc], provider="ollama")
+        examples = await asyncio.to_thread(infer_few_shot_examples, [doc], provider="ollama")
+        
+        style_result = {
+            "rules": rules,
+            "examples": [ex.model_dump() for ex in examples],
+            "reference_url": ref_url
+        }
+        
+        logger.info(f"🎨 STYLE: Extracted {len(rules)} rules and {len(examples)} examples")
+        return {"writing_style": style_result}
+        
+    except Exception as e:
+        logger.warning(f"🎨 STYLE: Style inference failed - {e}")
+        return {"writing_style": None}
+
+
 @traceable(name="SARGE Profiler Node")
-def profiler_node(state: AgentState) -> AgentState:
+async def profiler_node(state: AgentState) -> AgentState:
     """
     Extract structured prospect data
     Preset B: Temperature 0.1, JSON output
@@ -70,14 +158,8 @@ def profiler_node(state: AgentState) -> AgentState:
     
     engine = get_engine()
     
-    # Setup structured output
-    llm_client = instructor.from_openai(
-        openai.OpenAI(
-            base_url="http://localhost:11434/v1",
-            api_key="ollama"
-        ),
-        mode=instructor.Mode.JSON
-    )
+    # Setup structured output from shared engine
+    llm_client = engine.structured
     
     extraction_prompt = f"""You are a data extraction specialist. Extract prospect information from this text.
 
@@ -95,19 +177,22 @@ EXTRACTION RULES:
    - "formal" if text mentions: professional, formal, executive, C-level, director
    - Default to "formal" if unclear
 6. key_interests: List topics mentioned (e.g., ["AI", "automation", "growth"])
+7. research_queries: Identify 1-2 specific technical topics or claims mentioned in the user instructions that require research (e.g., "CUDA-X edge computing", "latest earnings report"). 
 
-Return valid JSON with these exact fields. Use null for missing optional fields, never leave fields undefined."""
+Return valid JSON with these exact fields. Use null for missing optional fields, never leave fields undefined.
+STRICT: DO NOT invent topics. Only extract what is explicitly or strongly implied in the INPUT TEXT.
+"""
     
     try:
-        profile: ProspectProfile = llm_client.chat.completions.create(
+        profile: ProspectProfile = await llm_client.chat.completions.create(
             model=engine.model_name,
             response_model=ProspectProfile,
             messages=[
-                {"role": "system", "content": "You are a data extraction specialist. Always return valid JSON matching the schema. Use null for missing data, never undefined."},
+                {"role": "system", "content": "Extract structured prospect data. Default 'Unknown' if missing."},
                 {"role": "user", "content": extraction_prompt}
             ],
-            temperature=0.1,
-            max_retries=3
+            temperature=0.0,
+            max_retries=2
         )
         
         profile_dict = profile.model_dump()
@@ -120,9 +205,55 @@ Return valid JSON with these exact fields. Use null for missing optional fields,
             
         logger.info(f"🔍 PROFILER: Extracted profile for {profile_dict['name']}")
         
+        # --- PHASE 3: NEWS JACKING & TOPIC SEARCH ---
+        research_context = []
+        company = profile_dict.get("company")
+        name = profile_dict.get("name")
+        topics = profile_dict.get("research_queries", [])
+        
+        # 1. Target Topic Search (Highest Priority for accuracy)
+        for topic in topics:
+            logger.info(f"📡 RESEARCH: Searching for topic: {topic}")
+            try:
+                res = await duckduckgo_search.ainvoke({"query": f"{topic} latest details 2026"})
+                research_context.append(f"TOPIC RESEARCH ({topic}):\n{res}")
+            except Exception as e:
+                logger.warning(f"📡 RESEARCH: Topic search failed for '{topic}' - {e}")
+
+        # 2. Company/News Search
+        if company and company not in ["Unknown", "your organization"]:
+            logger.info(f"📡 RESEARCH: Searching for news about {company}")
+            try:
+                res = await duckduckgo_search.ainvoke({"query": f"recent news {company} 2026"})
+                research_context.append(f"COMPANY NEWS ({company}):\n{res}")
+                
+                # Background if info sparse
+                if name and name not in ["Unknown", "Unknown Prospect"]:
+                    wiki_res = await wikipedia_search.ainvoke({"query": f"{name} {company}"})
+                    if "Wikipedia Summary" in wiki_res:
+                         research_context.append(f"WIKIPEDIA BACKGROUND ({name}):\n{wiki_res}")
+            except Exception as e:
+                logger.warning(f"📡 RESEARCH: Company search failed - {e}")
+                
+        # 3. Individual Search (Fallback)
+        elif name and name not in ["Unknown", "Unknown Prospect"]:
+            logger.info(f"📡 RESEARCH: Searching for background on {name}")
+            try:
+                res = await duckduckgo_search.ainvoke({"query": f"{name} professional background 2026"})
+                research_context.append(f"INDIVIDUAL PROFILE ({name}):\n{res}")
+                
+                wiki_res = await wikipedia_search.ainvoke({"query": name})
+                if "Wikipedia Summary" in wiki_res:
+                    research_context.append(f"WIKIPEDIA SUMMARY ({name}):\n{wiki_res}")
+            except Exception as e:
+                logger.warning(f"📡 RESEARCH: Individual search failed - {e}")
+
+        final_context = "\n\n---\n\n".join(research_context)
+        
         return {
             "prospect_data": profile_dict,
-            "generation_attempts": 0 # Initialize attempts
+            "news_context": final_context if final_context else None,
+            "generation_attempts": 0 
         }
         
     except Exception as e:
@@ -141,7 +272,7 @@ Return valid JSON with these exact fields. Use null for missing optional fields,
 
 
 @traceable(name="SARGE Strategist Node")
-def strategist_node(state: AgentState) -> AgentState:
+async def strategist_node(state: AgentState) -> AgentState:
     """
     Brainstorm hyperpersonalized outreach strategy
     Preset B: Temperature 0.1, JSON output
@@ -171,7 +302,7 @@ def strategist_node(state: AgentState) -> AgentState:
         mode=instructor.Mode.JSON
     )
 
-    strategy_prompt = f"""You are a top-tier Sales Strategist. Design a hyperpersonalized outreach strategy.
+    strategy_prompt = f"""You are a top-tier Sales Strategist. Design a hyperpersonalized outreach strategy for maximum attention.
 
 PROSPECT DATA:
 - Name: {prospect.get('name')}
@@ -180,11 +311,19 @@ PROSPECT DATA:
 - Interests: {', '.join(prospect.get('key_interests', []))}
 - Industry: {prospect.get('industry')}
 
-GOAL: Find a unique "Hook" and "Value Prop" that will resonate deeply.
-Think: Why should they care RIGHT NOW? What specific detail in their profile can we use?
+NEWS CONTEXT (RECENT COMPANY NEWS):
+{state.get('news_context', 'No recent news found.')}
+
+GOAL: Stop the scroll. Find a specific "Hook" based on their RECENT ACTIVITY, POSTS, or the NEWS CONTEXT above.
+Avoid generic openers like "I hope this finds you well".
+Focus on:
+1. Recent news/events about their company (News Jacking)
+2. Recent posts/articles they shared or wrote (High Attention)
+3. Specific projects or achievements (High Relevance)
+4. pattern interrupts - something unexpected but relevant.
 
 Required Output:
-1. hook: A specific, high-intent opener.
+1. hook: A specific, high-intent opener referencing their company news or recent activity.
 2. value_prop: How we solve a problem specific to their role/interests.
 3. pain_point: A likely challenge they face in their current position.
 4. recommended_tone: Nuanced tone suggestion (e.g. "approachable but technical")."""
@@ -218,21 +357,23 @@ Required Output:
 
 
 @traceable(name="SARGE Retriever Node")
-def retriever_node(state: AgentState) -> AgentState:
+async def retriever_node(state: AgentState) -> AgentState:
     """
     Query ChromaDB for successful past outreach templates
     """
     logger.info("📚 RETRIEVER: Querying past successful templates")
     
+    kb = get_kb()
     prospect = state.get("prospect_data", {})
     industry = prospect.get("industry", "Unknown")
     role = prospect.get("role", "Unknown")
     
-    kb = SimpleKnowledgeBase()
+    kb = get_kb()
     
-    # Query for similar outreach based on role and industry
+    # --- TURBO: Query ChromaDB with Keywords directly ---
+    # No HyDE, just keyword-driven vector search
     query = f"Outreach for {role} in {industry}"
-    past_examples = kb.get_similar_outreach(query, limit=3)
+    past_examples = await asyncio.to_thread(kb.get_similar_outreach, query, limit=3)
     
     templates = [ex['content'] for ex in past_examples]
     
@@ -261,37 +402,57 @@ async def writer_node(state: AgentState) -> AgentState:
     critic = state.get("critic_feedback", {})
     templates = state.get("retrieved_templates", [])
     
-    if not prospect or prospect.get("name") == "Unknown Prospect":
-        logger.warning("✍️ WRITER: No prospect data available")
-        return {
-            "generated_content": {
-                "error": "No prospect profile found. Please provide prospect details first."
-            }
-        }
+    # Handle Unknown Prospect case gracefully
+    if not prospect:
+        prospect = {"name": None}
     
-    name = prospect.get("name", "there")
-    role = prospect.get("role", "your role")
-    company = prospect.get("company", "your company")
+    name = prospect.get("name")
+    if name in ["Unknown", "Unknown Prospect", "there"]:
+        name = None
+    
+    role = prospect.get("role")
+    if role in ["Unknown", "your role"]:
+        role = "Executive"
+        
+    company = prospect.get("company")
+    if company in ["Unknown", "your company"]:
+        company = "your organization"
     tone = strategy.get("recommended_tone", prospect.get("detected_tone", "formal"))
     
-    # DYNAMIC FEW-SHOT EXAMPLES based on tone
-    few_shot_examples = ""
-    if "casual" in tone.lower():
-        few_shot_examples = """
-CASUAL OUTREACH EXAMPLES (FEW-SHOT):
-1. "Hey [Name], saw your post about [Topic]—super cool! I'm [My Name], working on [Project]. Coffee next week?"
-2. "Hi [Name]! Love what [Company] is doing. Ever thought about [Problem]? We're fixing that. Cheers!"
+    # DYNAMIC INSTRUCTIONS (Originality First)
+    originality_meta = """
+!!! ORIGINALITY FIRST !!!
+- DO NOT rely on rigid templates.
+- Write from scratch based on the Prospect context and User instructions.
+- Avoid common 'salesy' patterns.
 """
-    elif "formal" in tone.lower() or "professional" in tone.lower():
-        few_shot_examples = """
-FORMAL OUTREACH EXAMPLES (FEW-SHOT):
-1. "Dear [Name], I recently followed your work at [Company] regarding [Topic]. I am writing to discuss a potential collaboration..."
-2. "Hello [Name], I hope this email finds you well. As the [Role] at [Company], I thought you might be interested in our new solution for [Problem]."
+
+    # --- PHASE 3: STYLE TRANSFER INJECTION ---
+    writing_style = state.get("writing_style")
+    style_notes = ""
+    if writing_style:
+        rules = "\n".join([f"- {r}" for r in writing_style.get("rules", [])])
+        examples = writing_style.get("examples", [])
+        examples_str = ""
+        for ex in examples[:2]:
+            examples_str += f"\nExample Input: {ex.get('input')}\nExample Output: {ex.get('output')}\n"
+            
+        style_notes = f"""
+!!! STRICT STYLE RULES (OBEY THESE) !!!
+{rules}
+
+FEW-SHOT STYLE EXAMPLES:
+{examples_str}
 """
+        logger.info("✍️ WRITER: Injecting custom writing style")
+
+    news_info = ""
+    if state.get("news_context"):
+        news_info = f"\nRECENT NEWS CONTEXT:\n{state.get('news_context')}\n"
 
     past_context = ""
     if templates:
-        past_context = "\nSUCCESSFUL PAST TEMPLATES FOR REFERENCE:\n" + "\n---\n".join(templates)
+        past_context = "\n[VOLATILE REFERENCE ONLY] PAST TEMPLATES:\n" + "\n---\n".join(templates) + "\n(NOTE: Use these only as background info. Do NOT copy their structure.)"
 
     # Check for critic feedback to incorporate
     critic_notes = ""
@@ -307,35 +468,93 @@ You MUST REWRITE the sections mentioned above. Do NOT reuse the same rejected bo
 """
 
     # Prepare prompts
-    email_prompt = f"""Write a HYPERPERSONALIZED cold outreach EMAIL.
-{few_shot_examples}
-{past_context}
-{critic_notes}
-STRATEGY: {strategy.get('hook')} | {strategy.get('value_prop')}
-PROSPECT: {name}, {role} at {company} (Tone: {tone})
-Requirements: Subject included, 120-180 words, must start with Hook."""
+    # --- TURBO: Merge Strategist logic into Writer prompts ---
+    email_prompt = f"""You are a world-class Executive Outreach Specialist.
+Your task is to write a high-prestige, catchy email to {name if name else "the prospect"}.
 
-    linkedin_prompt = f"""Write a HYPERPERSONALIZED LINKEDIN DM.
-{few_shot_examples}
-PROSPECT: {name} ({role}) | Tone: {tone}
-Under 400 characters. Mention connection point clearly and propose value."""
+!!! STICKY USER INSTRUCTIONS (COMPLY FULLY) !!!
+{state.get('raw_input', 'N/A')}
 
-    whatsapp_prompt = f"""Write a 3-4 sentence HYPERPERSONALIZED WHATSAPP message.
-Target: {name} | Hook: {strategy.get('hook')}"""
+[STRATEGIC BRAINSTORM]
+- Prospect Context: {name if name else "Executive"} ({role} at {company}).
+- Research Hook: {state.get('news_context', 'N/A')}.
+- Pattern Interrupt: Find a non-obvious, sharp opening.
+- Credibility Anchor: Use Social Proof to establish prestige.
 
-    # Parallel execution
-    tasks = [
-        engine.creative.ainvoke(email_prompt),
-        engine.creative.ainvoke(linkedin_prompt),
-        engine.creative.ainvoke(whatsapp_prompt)
-    ]
+[EXECUTIVE DRAFT]
+Subject: [Sharp, Catchy Subject - 4-6 words]
+Content:
+(Personalized email starting with the Pattern Interrupt)
+- CRITICAL: FOLLOW THE USER INSTRUCTIONS ABOVE EXACTLY. If they want to talk about CUDA-X, talk about CUDA-X.
+- NO META-COMMENTARY. DO NOT mention the search process or what you couldn't find.
+- NEVER say: "I couldn't find news about...", "As no recent news was found...", etc.
+- NO PLACEHOLDERS: NEVER use brackets like [Name], [Company], [Your Name], or [insert number]. 
+- No Fluff: Delete "I hope this finds you well" or "My name is...".
+- Tone: {tone} (Prestige/Executive).
+- Length: 100-250 words. MEATY and substantial.
+- Context: {past_context}
+- Previous Feedback: {critic_notes}
+- Salutation: If name unknown, avoid "Hi there". Use "Hi," or jump straight to the point.
+"""
+
+    linkedin_prompt = f"""Write a CATCHY LinkedIn DM (400-600 characters) for {name if name else "this lead"}.
+!!! USER INSTRUCTIONS !!!
+{state.get('raw_input', 'N/A')}
+
+HOOK: Based on {company} or their industry.
+- NO SUBJECT.
+- FOLLOW USER INSTRUCTIONS EXACTLY.
+- NO PLACEHOLDERS or missing news apologies.
+- Tone: {tone}. Hyper-direct."""
+
+    whatsapp_prompt = f"""Write an IMPACTFUL WhatsApp message (3-5 substantial sentences) for {name if name else "this lead"}.
+!!! USER INSTRUCTIONS !!!
+{state.get('raw_input', 'N/A')}
+
+Target: {name if name else "this lead"}. 
+- FOLLOW USER INSTRUCTIONS EXACTLY.
+- No apologies for missing news. No placeholders like []. 
+- Be direct but give enough context to be truly compelling."""
+
+    # NEW: Get requested channels from state (default to email only for speed/quality balance)
+    requested_channels = state.get("requested_channels")
+    if not requested_channels:
+        requested_channels = ["email"]
     
+    logger.info(f"✍️ WRITER: Generating for channels: {requested_channels}")
+    
+    # Load existing content to preserve successful generations
+    existing_content = state.get("generated_content", {})
+    
+    # Build tasks only for requested channels
+    tasks = []
+    channel_order = []
+    
+    async def _stream_channel(channel_name, prompt):
+        full_content = ""
+        config = {"tags": [f"channel:{channel_name}"]}
+        async for chunk in engine.creative.astream(prompt, config=config):
+            full_content += chunk.content
+        return full_content
+
+    if "email" in requested_channels:
+        tasks.append(_stream_channel("email", email_prompt))
+        channel_order.append("email")
+    if "linkedin" in requested_channels:
+        tasks.append(_stream_channel("linkedin", linkedin_prompt))
+        channel_order.append("linkedin")
+    if "whatsapp" in requested_channels:
+        tasks.append(_stream_channel("whatsapp", whatsapp_prompt))
+        channel_order.append("whatsapp")
+    
+    # Parallel execution of only requested channels
     results = await asyncio.gather(*tasks)
-    contents = {
-        "email": results[0].content,
-        "linkedin": results[1].content,
-        "whatsapp": results[2].content
-    }
+    
+    # Build contents dict, merging with existing content
+    contents = existing_content.copy()  # Start with existing content
+    
+    for i, channel in enumerate(channel_order):
+        contents[channel] = results[i]
 
     return {
         "generated_content": contents,
@@ -344,7 +563,7 @@ Target: {name} | Hook: {strategy.get('hook')}"""
 
 
 @traceable(name="SARGE Critic Node")
-def critic_node(state: AgentState) -> AgentState:
+async def critic_node(state: AgentState) -> AgentState:
     """
     Evaluate content quality and personalization with rigorous rigour
     Preset A: Temperature 0.0, JSON output
@@ -353,79 +572,71 @@ def critic_node(state: AgentState) -> AgentState:
     
     engine = get_engine()
     content = state.get("generated_content", {})
-    strategy = state.get("strategy_brief", {})
+    prospect = state.get("prospect_data", {}) or {}
+    name = prospect.get("name", "Unknown")
+    company = prospect.get("company", "Unknown")
     attempts = state.get("generation_attempts", 0)
     
     if "error" in content:
         return {"critic_feedback": {"score": 1, "is_ready": False, "critique": "Generation failed."}}
 
-    # Setup structured output
-    llm_client = instructor.from_openai(
-        openai.OpenAI(
-            base_url="http://localhost:11434/v1",
-            api_key="ollama"
-        ),
-        mode=instructor.Mode.JSON
-    )
+    evaluation_prompt = f"""You are a strict Quality Critic for sales outreach.
+Evaluate these messages based on Catchiness, Credibility, and Personalization.
 
-    evaluation_prompt = f"""You are a senior Quality Assurance Specialist for Personalized Sales Outreach.
-Evaluate the latest generation attempt.
+CRITERIA:
+1. Catchiness: Is there a "Pattern Interrupt"? (Boring subject or opening = <4)
+2. Credibility: Is there Social Proof (specific achievements or data points)? (Vague = <5)
+3. Personalization: Does it mention {company} or {name} specifically?
 
-STRATEGY INTENDED:
-- Hook: {strategy.get('hook')}
-- Value Prop: {strategy.get('value_prop')}
+CONTENT:
+EMAIL: {content.get('email', 'N/A')}
+LINKEDIN: {content.get('linkedin', 'N/A')}
 
-CONTENT TO EVALUATE:
-EMAIL:
-{content.get('email')}
-
-LINKEDIN:
-{content.get('linkedin')}
-
-WHATSAPP:
-{content.get('whatsapp')}
-
-EVALUATION RULES (BE SPECIFIC - NO GENERIC PHRASES):
-1. HOOK FIDELITY (Email): Did it start with the specific hook provided? If not, state exactly what is missing.
-2. PERSONALIZATION: Identify EXACT prospect details used. Avoid saying "needs more personalization". Instead, say "Mention [Specific Fact] from [Source]".
-3. FEEDBACK ADHERENCE: If there was previous feedback ({attempts} attempts so far), did the writer actually fix the reported issues? Identify specific ignored feedback.
-4. CHANNEL OPTIMIZATION: Is the LinkedIn DM 300-400 chars? Is the WhatsApp message 3-4 sentences? If too short/long, specify by how much.
-
-CRITICAL: Your 'critique' MUST be actionable. Instead of "lacks wow factor", say "The hook is too formal; change it to mention the prospect's recent tweet about [Topic]".
-
-SCORING:
-- 1-6: Generic/Boilerplate. (is_ready: False)
-- 7: Good but needs specific actionable refinements. (is_ready: False)
-- 8-9: Excellent. Hyperpersonalized and specific. (is_ready: True)
-- 10: Perfect. (is_ready: True)
-
-RETURN JSON with:
-- score (int)
-- critique (str: ACTIONABLE AND SPECIFIC suggestions only)
-- additions (list of strings: specific facts/keywords/phrases to add)
-- removals (list of strings: specific phrases/boilerplate to remove)
-- is_ready (bool)
+JSON FIELDS TO RETURN:
+- score: int (Overall Score 1-10)
+- critique: str (15-word reason specifically why catchiness/credibility failed)
+- is_ready: bool (True if score >= 8)
 """
 
+    # Setup structured output from shared engine
+    llm_client = engine.structured
+
     try:
-        feedback: CriticFeedback = llm_client.chat.completions.create(
+        feedback: CriticFeedback = await llm_client.chat.completions.create(
             model=engine.model_name,
             response_model=CriticFeedback,
             messages=[
-                {"role": "system", "content": "You are a critical Sales Editor. Identify specific elements to add or remove. Reward improvements between attempts."},
+                {"role": "system", "content": "You are a rigorous quality critic. Focus on high personalization."},
                 {"role": "user", "content": evaluation_prompt}
             ],
-            temperature=0.0
+            temperature=0.1,
+            max_retries=2
         )
         
-        # Enforce logic: Score 8+ is ALWAYS ready to prevent unnecessary loops (Speed Optimization)
-        if feedback.score >= 8:
+        # PARTIAL RETRY LOGIC
+        # Identify which channels need regeneration (score < 8)
+        failed_channels = []
+        scores = feedback.channel_scores or {}
+        
+        # If no detailed scores, assume all failed if overall score is low
+        overall_score = feedback.score or 0
+        if not scores and overall_score < 8:
+            failed_channels = state.get("requested_channels", ["email"])
+        else:
+            for channel, score in scores.items():
+                if (score is None or score < 8) and channel in state.get("requested_channels", []):
+                    failed_channels.append(channel)
+        
+        # Determine readiness
+        is_ready = len(failed_channels) == 0
+        if is_ready:
             feedback.is_ready = True
             
-        logger.info(f"⚖️ CRITIC: Score={feedback.score}/10 | Ready={feedback.is_ready} | Attempt={attempts}")
+        logger.info(f"⚖️ CRITIC: Score={feedback.score} | Channel Scores={scores} | Rework Needed: {failed_channels}")
         
         return {
-            "critic_feedback": feedback.model_dump()
+            "critic_feedback": feedback.model_dump(),
+            "requested_channels": failed_channels  # ONLY retry these channels in next writer pass
         }
     except Exception as e:
         logger.error(f"⚖️ CRITIC: Evaluation failed - {e}")
@@ -441,7 +652,7 @@ RETURN JSON with:
 
 
 @traceable(name="SARGE Editor Node")
-def editor_node(state: AgentState) -> AgentState:
+async def editor_node(state: AgentState) -> AgentState:
     """
     Refine existing content based on user feedback
     """
@@ -471,7 +682,7 @@ Current Content:
 
 
 @traceable(name="SARGE Clarification Node")
-def clarification_node(state: AgentState) -> AgentState:
+async def clarification_node(state: AgentState) -> AgentState:
     """Ask user for more context when router confidence is low"""
     logger.info("🤔 CLARIFICATION: Asking for more context")
     confidence = state.get('router_confidence', 0)
@@ -490,7 +701,7 @@ def clarification_node(state: AgentState) -> AgentState:
 
 
 @traceable(name="SARGE Fallback Node")
-def fallback_node(state: AgentState) -> AgentState:
+async def fallback_node(state: AgentState) -> AgentState:
     """
     Handle unknown or out-of-scope inputs
     """
@@ -507,3 +718,52 @@ def fallback_node(state: AgentState) -> AgentState:
     return {
         "generated_content": {"fallback_message": message}
     }
+
+
+@traceable(name="SARGE Voice Node")
+async def voice_node(state: AgentState) -> AgentState:
+    """
+    Generate audio outreach draft using TTS
+    """
+    logger.info("🎙️ VOICE: Generating audio draft")
+    content = state.get("generated_content", {})
+    text_to_speak = content.get("email") or content.get("linkedin") or content.get("chat_response")
+    
+    if not text_to_speak:
+        logger.warning("🎙️ VOICE: No text content found to speak")
+        return {}
+
+    # Clean text (remove subject line if email)
+    clean_text = re.sub(r'^Subject:.*?\n', '', text_to_speak, flags=re.MULTILINE|re.IGNORECASE)
+    clean_text = clean_text.strip()[:1000] # Limit length for speed
+    
+    try:
+        tts_engine = await asyncio.to_thread(get_tts)
+        
+        # Create static audio dir if it doesn't exist (fail-safe)
+        os.makedirs("static/audio", exist_ok=True)
+        
+        filename = f"outreach_{uuid.uuid4().hex[:8]}.wav"
+        file_path = os.path.join("static/audio", filename)
+        
+        # Run synthesis in thread to avoid blocking main loop
+        await asyncio.to_thread(
+            tts_engine.speak,
+            text=clean_text,
+            output_path=file_path
+        )
+        
+        # Audio URL for frontend
+        audio_url = f"/static/audio/{filename}"
+        
+        # Update generated content with audio path
+        new_content = content.copy()
+        new_content["audio_path"] = audio_url
+        
+        return {
+            "generated_content": new_content
+        }
+        
+    except Exception as e:
+        logger.error(f"🎙️ VOICE: Audio generation failed - {e}")
+        return {}

@@ -39,8 +39,19 @@ export default function OutreachChat() {
 
   // Scroll to bottom
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingContent, activeSendFlow, hasStarted]);
+    if (!bottomRef.current) return;
+
+    // Smooth scroll for general updates
+    bottomRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages.length, activeSendFlow, hasStarted]);
+
+  // Faster scroll for streaming content
+  useEffect(() => {
+    if (isStreaming && bottomRef.current) {
+      // Use instant scroll for streaming to keep up with high-frequency updates
+      bottomRef.current.scrollIntoView({ behavior: "auto", block: "end" });
+    }
+  }, [streamingContent]);
 
   // --- ACTIONS (Email/WhatsApp/LinkedIn) ---
   const handleSendAction = async (msgIndex, content, type) => {
@@ -85,23 +96,33 @@ export default function OutreachChat() {
     }
   };
 
-  const handleGenerateAudio = (text) => {
+  const handleGenerateAudio = async (text, msgId = null) => {
     if (!text) return;
+    setLoadingAction(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/ml/agent/sarge/voice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text })
+      });
+      const data = await res.json();
+      if (data.audio_url) {
+        // If we have a msgId, update the message with the new audio URL
+        if (msgId) {
+          setMessages(prev => prev.map(m =>
+            m.id === msgId ? { ...m, generated_content: { ...m.generated_content, audio_path: data.audio_url } } : m
+          ));
+        }
 
-    // Stop any current speech
-    window.speechSynthesis.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    // Select a voice if available, otherwise default
-    const voices = window.speechSynthesis.getVoices();
-    // Try to find a good English voice
-    const preferredVoice = voices.find(v => v.name.includes("Google US English") || v.name.includes("Samantha")) || voices[0];
-    if (preferredVoice) utterance.voice = preferredVoice;
-
-    utterance.rate = 1;
-    utterance.pitch = 1;
-
-    window.speechSynthesis.speak(utterance);
+        // Play it immediately
+        const audio = new Audio(`${API_BASE_URL}${data.audio_url}`);
+        audio.play();
+      }
+    } catch (err) {
+      console.error("Audio generation failed:", err);
+    } finally {
+      setLoadingAction(false);
+    }
   };
 
   const sendMessage = async () => {
@@ -131,12 +152,13 @@ export default function OutreachChat() {
     setMessages(prev => [...prev, initialAssistantMsg]);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/ml/agent/chat`, {
+      const response = await fetch(`${API_BASE_URL}/ml/agent/sarge/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "qwen2.5:3b-instruct",
           message: originalInput,
+          thread_id: assistantMsgId, // Use as session_id
           conversation_history: messages.map(m => ({
             role: m.role,
             content: m.content
@@ -165,30 +187,51 @@ export default function OutreachChat() {
                 const msgIndex = newMessages.findIndex(m => m.id === assistantMsgId);
                 if (msgIndex === -1) return prev;
 
-                const msg = newMessages[msgIndex];
+                const msg = { ...newMessages[msgIndex] };
+                newMessages[msgIndex] = msg;
 
-                if (data.type === "response") {
-                  msg.content += data.content;
-                  setStreamingContent(msg.content);
+                if (data.type === "token") {
+                  const content = data.content || "";
+                  if (data.channel) {
+                    const currentStreaming = msg.streaming_generated_content || {};
+                    msg.streaming_generated_content = {
+                      ...currentStreaming,
+                      [data.channel]: (currentStreaming[data.channel] || "") + content
+                    };
+                    setStreamingContent(prev => prev + (content.length > 0 ? " " : ""));
+                  } else {
+                    msg.content += content;
+                    setStreamingContent(msg.content);
+                  }
                 }
-                else if (data.type === "tool_call") {
-                  msg.tool_calls = [...(msg.tool_calls || []), {
-                    id: data.tool_call_id || `call_${Date.now()}`, // Ensure ID
-                    name: data.tool_name,
-                    args: data.tool_input,
-                    type: "tool_call"
-                  }];
-                }
-                else if (data.type === "tool_result") {
-                  msg.tool_results = [...(msg.tool_results || []), {
-                    content: data.content || data.tool_output,
-                    name: data.tool_name,
-                    tool_call_id: data.tool_call_id,
-                    type: "tool-result"
-                  }];
+                else if (data.type === "node_start") {
+                  msg.active_node = data.node;
+                  msg.thoughts = [...(msg.thoughts || []), `[${data.node}] ${data.content || 'Starting...'}`];
+
+                  // Clear previous drafts if the WRITER is restarting (e.g. after CRITIC)
+                  if (data.node === "WRITER") {
+                    msg.generated_content = null;
+                    msg.streaming_generated_content = null;
+                  }
+
+                  setStreamingContent(prev => prev + " ");
                 }
                 else if (data.type === "thought") {
-                  msg.thoughts = [...(msg.thoughts || []), data.content];
+                  const thoughtText = typeof data.content === 'object'
+                    ? JSON.stringify(data.content)
+                    : data.content;
+
+                  msg.thoughts = [...(msg.thoughts || []), `[${data.node}] ${thoughtText}`];
+                  setStreamingContent(prev => prev + " ");
+                }
+                else if (data.type === "result") {
+                  msg.generated_content = data.content;
+                  msg.streaming_generated_content = null;
+
+                  if (!msg.content && data.content.email) {
+                    msg.content = "I've generated the outreach for you. You can preview and send them using the cards below.";
+                  }
+                  setStreamingContent(prev => prev + " ");
                 }
                 else if (data.type === "done") {
                   setIsStreaming(false);
@@ -347,21 +390,20 @@ export default function OutreachChat() {
 
                             {/* Stepper */}
                             <div className="flex justify-between items-center px-1">
-                              {['HUNTER', 'PROFILER', 'STRATEGIST', 'SCRIBE', 'CRITIC'].map((step, idx) => {
-                                // Check if this step is active or done based on thoughts
-                                // We check if any thought starts with [STEP]
-                                const isStepActive = msg.thoughts?.some(t => t.toUpperCase().includes(`[${step}]`));
+                              {['ROUTER', 'PROFILER', 'RETRIEVER', 'WRITER', 'CRITIC'].map((step, idx) => {
+                                // Check if this step is active or done based on thoughts or state
+                                const isStepActive = msg.active_node === step || msg.thoughts?.some(t => t.toUpperCase().includes(`[${step}]`));
                                 return (
                                   <div key={step} className="flex flex-col items-center gap-2 relative z-10 group">
                                     <div className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all duration-500 ${isStepActive
                                       ? "bg-purple-600 border-purple-400 text-white shadow-[0_0_15px_rgba(147,51,234,0.5)]"
                                       : "bg-zinc-900 border-zinc-800 text-zinc-600"
                                       }`}>
-                                      {idx === 0 && <span className="text-xs">👻</span>}
-                                      {idx === 1 && <span className="text-xs">🧠</span>}
-                                      {idx === 2 && <span className="text-xs">♟️</span>}
-                                      {idx === 3 && <span className="text-xs">✍️</span>}
-                                      {idx === 4 && <span className="text-xs">⚖️</span>}
+                                      {idx === 0 && <span className="text-[10px] font-bold">R</span>}
+                                      {idx === 1 && <span className="text-[10px] font-bold">P</span>}
+                                      {idx === 2 && <span className="text-[10px] font-bold">M</span>}
+                                      {idx === 3 && <span className="text-[10px] font-bold">W</span>}
+                                      {idx === 4 && <span className="text-[10px] font-bold">C</span>}
                                     </div>
                                     <span className={`text-[10px] font-bold tracking-wider transition-colors duration-300 ${isStepActive ? "text-purple-300" : "text-zinc-700"}`}>
                                       {step}
@@ -385,11 +427,13 @@ export default function OutreachChat() {
                                 const content = match ? match[2] : thought;
 
                                 let colorClass = "text-zinc-500";
-                                if (node === 'HUNTER') colorClass = "text-blue-400";
+                                if (node === 'ROUTER') colorClass = "text-blue-400";
                                 if (node === 'PROFILER') colorClass = "text-pink-400";
-                                if (node === 'STRATEGIST') colorClass = "text-yellow-400";
-                                if (node === 'SCRIBE') colorClass = "text-purple-400";
+                                if (node === 'RETRIEVER') colorClass = "text-yellow-400";
+                                if (node === 'WRITER') colorClass = "text-purple-400";
                                 if (node === 'CRITIC') colorClass = "text-red-400";
+                                if (node === 'STYLE_INFERRER') colorClass = "text-cyan-400";
+                                if (node === 'GENERATOR') colorClass = "text-emerald-400 italic";
 
                                 return (
                                   <div key={tIdx} className="break-words leading-relaxed border-l-2 border-white/5 pl-2 hover:bg-white/5 transition-colors p-1 rounded-r-md">
@@ -439,47 +483,68 @@ export default function OutreachChat() {
                     {/* ACTIONS */}
                     {msg.role === 'assistant' && (
                       <div className="mt-3 w-full pl-1">
-                        {activeSendFlow?.msgIndex === i ? (
+                        {(activeSendFlow?.msgIndex === i || msg.generated_content || msg.streaming_generated_content || msg.active_node === 'WRITER') ? (
                           <div className="w-full mt-4 animate-in slide-in-from-bottom-2 duration-300">
-                            {/* STEP 1: PREVIEW (Read Only) */}
-                            {activeSendFlow.step === 'preview' && (
-                              <>
-                                {activeSendFlow.type === 'email' && (
+                            {/* AUTOMATIC CARD RENDERING FROM GENERATED CONTENT (Streaming or Final) */}
+                            {(msg.generated_content || msg.streaming_generated_content) ? (
+                              <div className="flex flex-col gap-4 w-full">
+                                {(msg.generated_content?.email || msg.streaming_generated_content?.email) && (
                                   <EmailPreviewCard
-                                    content={msg.content}
+                                    content={msg.generated_content?.email || msg.streaming_generated_content?.email}
+                                    audioPath={msg.generated_content?.audio_path}
+                                    onConvertAudio={() => handleGenerateAudio(msg.generated_content?.email || msg.streaming_generated_content?.email, msg.id)}
+                                    isAudioLoading={loadingAction}
                                     previewMode={true}
-                                    onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
-                                    onCancel={() => setActiveSendFlow(null)}
+                                    onProceed={() => setActiveSendFlow({ msgIndex: i, type: 'email', content: msg.generated_content?.email || msg.streaming_generated_content?.email, step: 'input' })}
+                                    onCancel={() => { }}
                                   />
                                 )}
-                                {activeSendFlow.type === 'whatsapp' && (
-                                  <WhatsAppPreviewCard
-                                    content={msg.content}
-                                    previewMode={true}
-                                    onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
-                                    onCancel={() => setActiveSendFlow(null)}
-                                  />
-                                )}
-                                {activeSendFlow.type === 'linkedin' && (
+                                {(msg.generated_content?.linkedin || msg.streaming_generated_content?.linkedin) && (
                                   <LinkedInPreviewCard
-                                    content={msg.content}
+                                    content={msg.generated_content?.linkedin || msg.streaming_generated_content?.linkedin}
+                                    audioPath={msg.generated_content?.audio_path}
+                                    onConvertAudio={() => handleGenerateAudio(msg.generated_content?.linkedin || msg.streaming_generated_content?.linkedin, msg.id)}
+                                    isAudioLoading={loadingAction}
                                     previewMode={true}
-                                    onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
-                                    onCancel={() => setActiveSendFlow(null)}
+                                    onProceed={() => setActiveSendFlow({ msgIndex: i, type: 'linkedin', content: msg.generated_content?.linkedin || msg.streaming_generated_content?.linkedin, step: 'input' })}
+                                    onCancel={() => { }}
                                   />
                                 )}
-                              </>
-                            )}
+                                {(msg.generated_content?.whatsapp || msg.streaming_generated_content?.whatsapp) && (
+                                  <WhatsAppPreviewCard
+                                    content={msg.generated_content?.whatsapp || msg.streaming_generated_content?.whatsapp}
+                                    audioPath={msg.generated_content?.audio_path}
+                                    onConvertAudio={() => handleGenerateAudio(msg.generated_content?.whatsapp || msg.streaming_generated_content?.whatsapp, msg.id)}
+                                    isAudioLoading={loadingAction}
+                                    previewMode={true}
+                                    onProceed={() => setActiveSendFlow({ msgIndex: i, type: 'whatsapp', content: msg.generated_content?.whatsapp || msg.streaming_generated_content?.whatsapp, step: 'input' })}
+                                    onCancel={() => { }}
+                                  />
+                                )}
+                              </div>
+                            ) : msg.active_node === 'WRITER' ? (
+                              <div className="flex flex-col gap-4 w-full animate-pulse">
+                                <div className="p-6 rounded-2xl bg-white/5 border border-white/10 border-dashed flex items-center gap-4 text-zinc-500">
+                                  <div className="w-10 h-10 rounded-xl bg-zinc-800 animate-spin flex items-center justify-center">⏳</div>
+                                  <div>
+                                    <p className="text-sm font-bold">Drafting personalized outreach...</p>
+                                    <p className="text-xs">Personalizing for prospect profile</p>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : null}
 
-                            {/* STEP 2: INPUT (After clicking OK/Proceed) */}
-                            {activeSendFlow.step === 'input' && (
-                              <ContactInputStep
-                                activeSendFlow={activeSendFlow}
-                                setActiveSendFlow={setActiveSendFlow}
-                                executeSend={(val) => executeSend(val, msg.content, msg.content)}
-                                loadingAction={loadingAction}
-                              />
-                            )}{/* STEP 2: INPUT (After clicking OK/Proceed) */}
+                            {/* MANUAL SEND FLOW (Fallback or Override) */}
+                            {activeSendFlow?.msgIndex === i && activeSendFlow.step === 'input' && (
+                              <div className="p-4 border border-purple-500/30 bg-purple-900/10 rounded-xl mt-2">
+                                <ContactInputStep
+                                  activeSendFlow={activeSendFlow}
+                                  setActiveSendFlow={setActiveSendFlow}
+                                  executeSend={(val) => executeSend(val, activeSendFlow.content, activeSendFlow.content)}
+                                  loadingAction={loadingAction}
+                                />
+                              </div>
+                            )}
 
                           </div>
                         ) : (
@@ -494,7 +559,7 @@ export default function OutreachChat() {
                               {/* Using Map icon temporarily for LinkedIn or text, reusing generic icon if needed, but text is clearer */}
                               <span className="font-bold text-[10px] bg-blue-600 text-white px-1 rounded">in</span> LinkedIn
                             </button>
-                            <button onClick={() => handleGenerateAudio(msg.content)} className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
+                            <button onClick={() => handleGenerateAudio(msg.content, msg.id)} className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
                               <Volume2 className="w-3 h-3" /> Audio
                             </button>
                           </div>
