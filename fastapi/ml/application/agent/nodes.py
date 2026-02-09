@@ -2,6 +2,7 @@ import instructor
 import asyncio
 from langchain_ollama import ChatOllama
 from loguru import logger
+from langsmith import traceable
 from ml.settings import settings
 from .schemas import (
     AgentState, ProspectProfile, PsychProfile, StrategyBrief, CritiqueResult, ChannelType
@@ -10,6 +11,7 @@ from .knowledge import SimpleKnowledgeBase
 from .writing_style_inferrer import infer_style_rules
 from agent_style_transfer.schemas import Document
 from ..crawlers.dispatcher import CrawlerDispatcher
+from .tools import duckduckgo_search
 import openai
 
 # --- Configuration ---
@@ -34,6 +36,7 @@ except Exception as e:
     raise
 
 # --- Node 1: HUNTER (Smart - KB First, then Scrape) ---
+@traceable(name="Hunter Node")
 async def hunter_node(state: AgentState) -> AgentState:
     logger.info("👻 HUNTER: Checking inputs...")
     url = state.get("target_url")
@@ -41,13 +44,44 @@ async def hunter_node(state: AgentState) -> AgentState:
     
     # 1. Check for valid URL
     if not url or url == "string" or "http" not in url:
-        logs.append("👻 HUNTER: No valid URL provided. Switching to General Mode.")
-        return {
-            "prospect": ProspectProfile(
-                name="User", role="General", company="General", raw_bio=""
-            ),
-            "logs": logs
-        }
+        logs.append("👻 HUNTER: No valid URL provided. Switching to Search Mode.")
+        
+        # Fallback: Extract entities from instruction and search
+        instruction = state.get("user_instruction", "")
+        # Very simple extraction or just use the instruction as query if short
+        search_query = instruction
+        
+        try:
+            logs.append(f"👻 HUNTER: Searching for '{search_query}'...")
+            search_results = await duckduckgo_search(search_query)
+            
+            # Extract structured facts from search results
+            profile = llm_client.chat.completions.create(
+                model=LOGIC_MODEL,
+                response_model=ProspectProfile,
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": "You are an expert lead researcher. Extract key facts from search results. Keep bio concise."
+                    },
+                    {
+                        "role": "user", 
+                        "content": f"Extract schema from these search results:\n\n{search_results}"
+                    }
+                ],
+                max_retries=2
+            )
+            logs.append(f"👻 HUNTER: Found {profile.name} via Search.")
+            return {"prospect": profile, "logs": logs}
+            
+        except Exception as e:
+            logs.append(f"👻 HUNTER: Search failed ({str(e)}). Using placeholder.")
+            return {
+                "prospect": ProspectProfile(
+                    name="User", role="General", company="General", raw_bio=""
+                ),
+                "logs": logs
+            }
     
     # 2. Check Knowledge Base
     # Simple extraction of name/company from URL is hard without scraping, 
@@ -57,7 +91,8 @@ async def hunter_node(state: AgentState) -> AgentState:
     
     try:
         logs.append(f"👻 HUNTER: Analyzing {url}...")
-        dispatcher = CrawlerDispatcher()
+        # Fix: Properly initialize dispatcher with all crawlers
+        dispatcher = CrawlerDispatcher.build().register_linkedin().register_medium().register_github()
         crawler = dispatcher.get_crawler(url) 
         
         # Async/Sync Crawl
@@ -105,8 +140,47 @@ async def hunter_node(state: AgentState) -> AgentState:
             ),
             "logs": logs
         }
+        
+    except Exception as e:
+        logger.error(f"Hunter failed: {e}")
+        logs.append(f"👻 HUNTER: Direct scrape failed ({str(e)}). Attempting Search Fallback...")
+        
+        try:
+            # Fallback to search using the URL as a query or extracting from it
+            fallback_query = f"{url} profile info"
+            search_results = await duckduckgo_search(fallback_query)
+            
+            profile = llm_client.chat.completions.create(
+                model=LOGIC_MODEL,
+                response_model=ProspectProfile,
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": "You are an expert lead researcher. Extract key facts from search results. Keep bio concise."
+                    },
+                    {
+                        "role": "user", 
+                        "content": f"Extract schema from these search results:\n\n{search_results}"
+                    }
+                ],
+                max_retries=2
+            )
+            logs.append(f"👻 HUNTER: Found {profile.name} via Search Fallback.")
+            return {"prospect": profile, "logs": logs}
+            
+        except Exception as fallback_error:
+            logger.error(f"Hunter fallback failed: {fallback_error}")
+            logs.append(f"👻 HUNTER: All methods failed. Using placeholder.")
+            return {
+                "prospect": ProspectProfile(
+                    name="Prospect", role="Professional", company="Target Company", 
+                    recent_activity=[], raw_bio=""
+                ),
+                "logs": logs
+            }
 
 # --- Node 2: PROFILER (Deep Style Inference) ---
+@traceable(name="Profiler Node")
 def profiler_node(state: AgentState) -> AgentState:
     logger.info("🧠 PROFILER: Analyzing personality & style...")
     prospect: ProspectProfile = state.get("prospect")
@@ -167,6 +241,7 @@ def profiler_node(state: AgentState) -> AgentState:
         }
 
 # --- Node 3: THE STRATEGIST (Multi-Channel Logic) ---
+@traceable(name="Strategist Node")
 def strategist_node(state: AgentState) -> AgentState:
     """
     Decides the Channel(s) based on user instruction.
@@ -237,6 +312,7 @@ def strategist_node(state: AgentState) -> AgentState:
         }
 
 # --- Node 4: THE SCRIBE (Looping Writer) ---
+@traceable(name="Scribe Node")
 def scribe_node(state: AgentState) -> AgentState:
     """
     Writes content for ALL selected channels.
@@ -340,6 +416,7 @@ def scribe_node(state: AgentState) -> AgentState:
     }
 
 # --- Node 5: THE CRITIC (Dictionary Aware) ---
+@traceable(name="Critic Node")
 def critic_node(state: AgentState) -> AgentState:
     """
     Evaluates the drafts.
