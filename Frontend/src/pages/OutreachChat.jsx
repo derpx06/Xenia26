@@ -549,6 +549,42 @@ export default function OutreachChat() {
                             ) : null}
 
                             {/* MANUAL SEND FLOW (Fallback or Override) */}
+                            {activeSendFlow?.msgIndex === i && activeSendFlow.step === 'preview' && (
+                              <div className="w-full mt-4 animate-in slide-in-from-bottom-2 duration-300">
+                                {activeSendFlow.type === 'email' && (
+                                  <EmailPreviewCard
+                                    content={activeSendFlow.content}
+                                    previewMode={true}
+                                    onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
+                                    onCancel={() => setActiveSendFlow(null)}
+                                    // Audio props can be added here if manual flow supports audio generation
+                                    onConvertAudio={() => handleGenerateAudio(activeSendFlow.content)}
+                                    isAudioLoading={loadingAction}
+                                  />
+                                )}
+                                {activeSendFlow.type === 'linkedin' && (
+                                  <LinkedInPreviewCard
+                                    content={activeSendFlow.content}
+                                    previewMode={true}
+                                    onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
+                                    onCancel={() => setActiveSendFlow(null)}
+                                    onConvertAudio={() => handleGenerateAudio(activeSendFlow.content)}
+                                    isAudioLoading={loadingAction}
+                                  />
+                                )}
+                                {activeSendFlow.type === 'whatsapp' && (
+                                  <WhatsAppPreviewCard
+                                    content={activeSendFlow.content}
+                                    previewMode={true}
+                                    onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
+                                    onCancel={() => setActiveSendFlow(null)}
+                                    onConvertAudio={() => handleGenerateAudio(activeSendFlow.content)}
+                                    isAudioLoading={loadingAction}
+                                  />
+                                )}
+                              </div>
+                            )}
+
                             {activeSendFlow?.msgIndex === i && activeSendFlow.step === 'input' && (
                               <div className="p-4 border border-purple-500/30 bg-purple-900/10 rounded-xl mt-2">
                                 <ContactInputStep
@@ -556,6 +592,7 @@ export default function OutreachChat() {
                                   setActiveSendFlow={setActiveSendFlow}
                                   executeSend={(val) => executeSend(val, activeSendFlow.content, activeSendFlow.content)}
                                   loadingAction={loadingAction}
+                                  onCancel={() => setActiveSendFlow(null)}
                                 />
                               </div>
                             )}
