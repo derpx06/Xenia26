@@ -15,12 +15,13 @@ import { StreamProvider } from "../providers/Stream";
 import { ThreadProvider } from "../providers/Thread";
 import { ArtifactProvider } from "../components/thread/artifact";
 
-const API_BASE_URL = "http://localhost:8000";
+const API_BASE_URL = "http://127.0.0.1:8000";
 const BACKEND_API_URL = "http://localhost:8080/api";
 
 export default function OutreachChat() {
   // --- UI STATE ---
   const [hasStarted, setHasStarted] = useState(false);
+  const [agentStatus, setAgentStatus] = useState("Idle");
 
   // --- LOGIC STATE ---
   const [messages, setMessages] = useState([
@@ -125,6 +126,25 @@ export default function OutreachChat() {
     }
   };
 
+  const parseMultiChannelMarkdown = (text) => {
+    if (!text) return null;
+    const sections = {};
+    const lines = text.split("\n");
+    let current = null;
+    for (const line of lines) {
+      const match = line.match(/^##\s+(.*)\s*$/);
+      if (match) {
+        current = match[1].trim().toLowerCase().replace(/\s+/g, "_");
+        if (!sections[current]) sections[current] = "";
+        continue;
+      }
+      if (current) {
+        sections[current] += (sections[current] ? "\n" : "") + line;
+      }
+    }
+    return Object.keys(sections).length ? sections : null;
+  };
+
   const sendMessage = async () => {
     if (!input.trim()) return;
     const originalInput = input;
@@ -135,6 +155,7 @@ export default function OutreachChat() {
 
     setInput("");
     setIsStreaming(true);
+    setAgentStatus("Connecting...");
     setStreamingContent("");
 
     // Create a placeholder for the assistant message
@@ -146,19 +167,19 @@ export default function OutreachChat() {
       content: "",
       tool_calls: [],
       tool_results: [],
-      thoughts: ["[SYSTEM] Initializing SARGE core..."]
+      thoughts: ["[SYSTEM] Initializing agent..."]
     };
 
     setMessages(prev => [...prev, initialAssistantMsg]);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/ml/agent/sarge/chat`, {
+      const response = await fetch(`${API_BASE_URL}/ml/agent/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "qwen2.5:3b-instruct",
           message: originalInput,
-          thread_id: assistantMsgId, // Use as session_id
+          thread_id: assistantMsgId,
           conversation_history: messages.map(m => ({
             role: m.role,
             content: m.content
@@ -190,52 +211,35 @@ export default function OutreachChat() {
                 const msg = { ...newMessages[msgIndex] };
                 newMessages[msgIndex] = msg;
 
-                if (data.type === "token") {
-                  const content = data.content || "";
-                  if (data.channel) {
-                    const currentStreaming = msg.streaming_generated_content || {};
-                    msg.streaming_generated_content = {
-                      ...currentStreaming,
-                      [data.channel]: (currentStreaming[data.channel] || "") + content
-                    };
-                    setStreamingContent(prev => prev + (content.length > 0 ? " " : ""));
-                  } else {
-                    msg.content += content;
-                    setStreamingContent(msg.content);
-                  }
-                }
-                else if (data.type === "node_start") {
-                  msg.active_node = data.node;
-                  msg.thoughts = [...(msg.thoughts || []), `[${data.node}] ${data.content || 'Starting...'}`];
-
-                  // Clear previous drafts if the WRITER is restarting (e.g. after CRITIC)
-                  if (data.node === "WRITER") {
-                    msg.generated_content = null;
-                    msg.streaming_generated_content = null;
-                  }
-
-                  setStreamingContent(prev => prev + " ");
+                if (data.type === "response") {
+                  msg.content += data.content || "";
+                  setStreamingContent(msg.content);
                 }
                 else if (data.type === "thought") {
                   const thoughtText = typeof data.content === 'object'
                     ? JSON.stringify(data.content)
                     : data.content;
 
-                  msg.thoughts = [...(msg.thoughts || []), `[${data.node}] ${thoughtText}`];
-                  setStreamingContent(prev => prev + " ");
-                }
-                else if (data.type === "result") {
-                  msg.generated_content = data.content;
-                  msg.streaming_generated_content = null;
-
-                  if (!msg.content && data.content.email) {
-                    msg.content = "I've generated the outreach for you. You can preview and send them using the cards below.";
+                  msg.thoughts = [...(msg.thoughts || []), thoughtText];
+                  if (thoughtText.includes("[PHASE]") || thoughtText.includes("[MILESTONE]")) {
+                    setAgentStatus(thoughtText.replace(/\[.*?\]\s*/, ""));
                   }
                   setStreamingContent(prev => prev + " ");
                 }
                 else if (data.type === "done") {
                   setIsStreaming(false);
                   setStreamingContent("");
+                  setAgentStatus("Complete");
+                  const parsed = parseMultiChannelMarkdown(msg.content);
+                  if (parsed) {
+                    msg.generated_content = {
+                      email: parsed.email,
+                      whatsapp: parsed.whatsapp,
+                      sms: parsed.sms,
+                      linkedin: parsed.linkedin_dm || parsed.linkedin,
+                      instagram: parsed.instagram_dm || parsed.instagram
+                    };
+                  }
                 }
 
                 return newMessages;
@@ -357,6 +361,13 @@ export default function OutreachChat() {
                       <p className="text-[10px] text-emerald-400 font-medium tracking-wide">SYSTEM ACTIVE</p>
                     </div>
                   </div>
+                </div>
+                {/* Agent Live Status Chip */}
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 border border-white/10 text-xs text-zinc-300">
+                  <span className={`w-2 h-2 rounded-full ${isStreaming ? "bg-orange-400 animate-pulse" : "bg-emerald-400"}`} />
+                  <span className="font-semibold">Agent Live</span>
+                  <span className="text-zinc-400">·</span>
+                  <span className="max-w-[200px] truncate">{agentStatus}</span>
                 </div>
 
                 <button onClick={() => setHasStarted(false)} className="p-2 hover:bg-white/10 rounded-xl transition-colors text-neutral-400 hover:text-white">
