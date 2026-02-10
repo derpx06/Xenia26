@@ -6,9 +6,17 @@ import json
 from ml.application.agent.schemas import AgentRequest, AgentResponse
 from ml.application.agent.streaming import stream_agent_response
 from ml.application.agent.graph import run_agent
-from ml.application.sarge.graph import run_sarge, stream_sarge
 from ml.infrastructure.db.sqlite import get_thread_history, add_message, create_thread, get_all_threads
-from ml.application.sarge.nodes import get_tts
+
+SARGE_AVAILABLE = True
+SARGE_IMPORT_ERROR = None
+try:
+    from ml.application.sarge.graph import run_sarge, stream_sarge
+    from ml.application.sarge.nodes import get_tts
+except Exception as e:
+    # Allow main app to start without optional SARGE/TTS dependencies
+    SARGE_AVAILABLE = False
+    SARGE_IMPORT_ERROR = str(e)
 import uuid
 import os
 import asyncio
@@ -307,6 +315,8 @@ async def sarge_chat_stream(request: AgentRequest):
     - result: Final generated content
     - token: Real-time LLM token streaming
     """
+    if not SARGE_AVAILABLE:
+        raise HTTPException(status_code=503, detail=f"SARGE unavailable: {SARGE_IMPORT_ERROR}")
     session_id = request.thread_id or str(uuid.uuid4())
     
     async def event_generator():
@@ -340,6 +350,8 @@ async def sarge_chat_sync(request: AgentRequest):
     Synchronous SARGE agent chat.
     Uses the new SARGE graph with persistence and upgrades.
     """
+    if not SARGE_AVAILABLE:
+        raise HTTPException(status_code=503, detail=f"SARGE unavailable: {SARGE_IMPORT_ERROR}")
     try:
         session_id = request.thread_id or str(uuid.uuid4())
         
@@ -367,6 +379,8 @@ async def sarge_voice(request: dict):
     """
     Generate audio for a given text on demand.
     """
+    if not SARGE_AVAILABLE:
+        raise HTTPException(status_code=503, detail=f"SARGE unavailable: {SARGE_IMPORT_ERROR}")
     text = request.get("text")
     if not text:
         raise HTTPException(status_code=400, detail="Text is required")
