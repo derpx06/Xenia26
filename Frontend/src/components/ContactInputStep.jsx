@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, Send } from 'lucide-react';
+import { Loader2, Send, X } from 'lucide-react';
 
 const BACKEND_URL = "http://localhost:8080/api";
 
-export default function ContactInputStep({ activeSendFlow, setActiveSendFlow, executeSend, loadingAction }) {
+export default function ContactInputStep({ activeSendFlow, setActiveSendFlow, executeSend, loadingAction, onCancel }) {
     // State for "Add Contact" prompt
     const [isPrompting, setIsPrompting] = useState(false);
     const [newContactName, setNewContactName] = useState("");
@@ -158,8 +158,15 @@ export default function ContactInputStep({ activeSendFlow, setActiveSendFlow, ex
                     }}
                 />
                 <button
+                    onClick={() => onCancel && onCancel()}
+                    className="bg-zinc-800 hover:bg-zinc-700 text-neutral-400 hover:text-white p-2 rounded-lg transition-colors border border-white/10"
+                    title="Cancel"
+                >
+                    <X className="w-4 h-4" />
+                </button>
+                <button
                     onClick={() => activeSendFlow.value && handleSendAction()}
-                    className="bg-purple-600 hover:bg-purple-500 text-white p-2 rounded-lg"
+                    className="bg-purple-600 hover:bg-purple-500 text-white p-2 rounded-lg transition-colors shadow-lg shadow-purple-900/20"
                 >
                     {loadingAction ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </button>

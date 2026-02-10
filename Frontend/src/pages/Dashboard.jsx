@@ -14,18 +14,21 @@ import {
 } from "recharts";
 import {
   TrendingUp,
-  TrendingDown,
   BrainCircuit,
   ScanFace,
   Sparkles,
   Loader2,
-  Wifi,
-  WifiOff,
   Activity,
   Zap,
   Clock,
-  ChevronRight
+  ChevronRight,
+  Target,
+  Mail,
+  Users,
+  Search,
+  ArrowUpRight
 } from "lucide-react";
+import { motion } from "framer-motion";
 import Sidebar from "../components/Sidebar";
 
 export default function Dashboard() {
@@ -54,10 +57,26 @@ export default function Dashboard() {
     const storedUser = localStorage.getItem("user");
     if (!storedUser) return navigate("/login");
     setUser(JSON.parse(storedUser));
+    // Simulate loading for animation effect
     setTimeout(() => setLoading(false), 800);
   }, [navigate]);
 
   if (!user) return null;
+
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1
+      }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } }
+  };
 
   return (
     <div className="flex h-screen bg-[#020202] text-white overflow-hidden font-sans selection:bg-blue-500/30">
@@ -70,10 +89,15 @@ export default function Dashboard() {
 
         <Header user={user} />
 
-        <div className="p-6 lg:p-10 max-w-[1600px] mx-auto w-full space-y-8 z-10 relative">
+        <motion.div
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
+          className="p-6 lg:p-10 max-w-[1600px] mx-auto w-full space-y-8 z-10 relative"
+        >
 
           {/* --- WELCOME & STATUS SECTION --- */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <motion.div variants={itemVariants} className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
             <div>
               <h1 className="text-3xl lg:text-4xl font-bold tracking-tight text-white mb-2">
                 Overview
@@ -83,63 +107,66 @@ export default function Dashboard() {
               </p>
             </div>
 
-            {/* System Health Pill */}
-            <div className="flex items-center gap-4 bg-[#0A0A0A]/80 backdrop-blur-md border border-white/5 p-2 pr-4 rounded-2xl shadow-xl">
-              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-emerald-900/20 border border-emerald-500/20 flex items-center justify-center">
-                <Activity className="w-5 h-5 text-emerald-400" />
-              </div>
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-neutral-500 font-bold">System Status</p>
-                <div className="flex items-center gap-2">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                  </span>
-                  <span className="text-sm font-medium text-white">Operational</span>
-                </div>
-              </div>
+            {/* Quick Actions Toolbar */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => navigate('/outreach')}
+                className="group flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white text-sm font-semibold rounded-xl border border-blue-500/50 shadow-lg shadow-blue-900/20 transition-all hover:scale-105"
+              >
+                <Sparkles className="w-4 h-4" />
+                New Campaign
+              </button>
+              <button className="p-2 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-colors text-neutral-400 hover:text-white">
+                <Search className="w-5 h-5" />
+              </button>
             </div>
-          </div>
+          </motion.div>
 
-          {/* --- BENTO GRID STATS --- */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <PremiumStatCard
-              title="Profiles Scraped"
-              value="2,543"
-              metric="+12.5%"
-              metricColor="text-emerald-400"
-              icon={ScanFace}
-              gradient="from-blue-500/20 to-blue-600/5"
-              iconColor="text-blue-400"
-              delay={100}
+          {/* --- INDICATORS GRID --- */}
+          <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <KPI_Card
+              title="Total Leads"
+              value="12,450"
+              trend="+12%"
+              icon={Users}
+              color="text-blue-400"
+              bg="bg-blue-500/10"
+              border="border-blue-500/20"
             />
-            <PremiumStatCard
-              title="AI Personalizations"
-              value="2,490"
-              metric="98% Success"
-              metricColor="text-emerald-400"
-              icon={Sparkles}
-              gradient="from-purple-500/20 to-pink-600/5"
-              iconColor="text-purple-400"
-              delay={200}
+            <KPI_Card
+              title="Emails Sent"
+              value="8,230"
+              trend="+5.4%"
+              icon={Mail}
+              color="text-purple-400"
+              bg="bg-purple-500/10"
+              border="border-purple-500/20"
             />
-            <PremiumStatCard
-              title="Tone Accuracy"
-              value="94/100"
-              metric="+2.4 Score"
-              metricColor="text-emerald-400"
+            <KPI_Card
+              title="Response Rate"
+              value="24.8%"
+              trend="+1.2%"
+              icon={Target}
+              color="text-emerald-400"
+              bg="bg-emerald-500/10"
+              border="border-emerald-500/20"
+            />
+            <KPI_Card
+              title="AI Credits"
+              value="840"
+              trend="Unlimited"
               icon={BrainCircuit}
-              gradient="from-emerald-500/20 to-teal-600/5"
-              iconColor="text-emerald-400"
-              delay={300}
+              color="text-amber-400"
+              bg="bg-amber-500/10"
+              border="border-amber-500/20"
             />
-          </div>
+          </motion.div>
 
-          {/* --- CHARTS GRID --- */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-auto lg:h-[450px]">
+          {/* --- MAIN DASHBOARD CONTENT --- */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-auto">
 
             {/* MAIN CHART */}
-            <div className="lg:col-span-2 bg-[#0A0A0A]/60 backdrop-blur-md border border-white/5 rounded-3xl p-6 flex flex-col shadow-2xl relative overflow-hidden group">
+            <motion.div variants={itemVariants} className="lg:col-span-2 bg-[#0A0A0A]/60 backdrop-blur-xl border border-white/5 rounded-3xl p-6 flex flex-col shadow-2xl relative overflow-hidden group min-h-[400px]">
               {/* Subtle top sheen */}
               <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-50" />
 
@@ -192,10 +219,10 @@ export default function Dashboard() {
                   </ResponsiveContainer>
                 )}
               </div>
-            </div>
+            </motion.div>
 
             {/* SECONDARY CHART */}
-            <div className="bg-[#0A0A0A]/60 backdrop-blur-md border border-white/5 rounded-3xl p-6 flex flex-col shadow-2xl relative overflow-hidden">
+            <motion.div variants={itemVariants} className="bg-[#0A0A0A]/60 backdrop-blur-xl border border-white/5 rounded-3xl p-6 flex flex-col shadow-2xl relative overflow-hidden min-h-[400px]">
               <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-50" />
 
               <div className="mb-6">
@@ -231,43 +258,69 @@ export default function Dashboard() {
               </div>
 
               {/* Insight Pill */}
-              <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/5 flex gap-3 items-center">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                className="mt-4 p-3 bg-white/5 rounded-xl border border-white/5 flex gap-3 items-center hover:bg-white/10 transition-colors cursor-default"
+              >
                 <div className="p-1.5 bg-emerald-500/20 rounded-full">
                   <TrendingUp className="w-3 h-3 text-emerald-400" />
                 </div>
                 <p className="text-xs text-neutral-400">
                   <span className="text-white font-medium">"Witty"</span> tone creates <span className="text-emerald-400 font-bold">+15%</span> more engagement.
                 </p>
-              </div>
-            </div>
+              </motion.div>
+            </motion.div>
 
           </div>
-        </div>
+        </motion.div>
       </main>
     </div>
   );
 }
 
-// --- PREMIUM SUB COMPONENTS ---
+// --- SUB COMPONENTS ---
+
+const KPI_Card = ({ title, value, trend, icon: Icon, color, bg, border }) => (
+  <div className={`p-5 rounded-2xl bg-[#0A0A0A]/60 backdrop-blur-xl border border-white/5 hover:border-white/10 transition-all duration-300 group`}>
+    <div className="flex justify-between items-start mb-4">
+      <div className={`p-2.5 rounded-xl ${bg} ${border} ${color}`}>
+        <Icon className="w-5 h-5" />
+      </div>
+      <div className="flex items-center gap-1 text-xs font-medium bg-white/5 px-2 py-1 rounded-full text-neutral-400">
+        {trend === "Unlimited" ? (
+          <Sparkles className="w-3 h-3 text-amber-400" />
+        ) : (
+          <ArrowUpRight className="w-3 h-3" />
+        )}
+        {trend}
+      </div>
+    </div>
+    <div>
+      <h4 className="text-2xl font-bold text-white tracking-tight tabular-nums">{value}</h4>
+      <p className="text-xs text-neutral-500 font-medium mt-1">{title}</p>
+    </div>
+  </div>
+);
 
 const Header = ({ user }) => {
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 
   return (
     <header className="sticky top-0 z-50 bg-[#020202]/80 backdrop-blur-xl border-b border-white/5 px-6 lg:px-10 py-4 flex justify-between items-center transition-all duration-300">
-      {/* Left: Offline Status (Crucial for Hackathon) */}
+      {/* Left items */}
       <div className="flex items-center gap-4">
-        <div className="hidden md:flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-[#0F0F0F] border border-white/10 shadow-inner group cursor-default hover:border-emerald-500/30 transition-colors">
-          <WifiOff className="w-3.5 h-3.5 text-neutral-500 group-hover:text-emerald-400 transition-colors" />
-          <span className="text-xs font-medium text-neutral-400 group-hover:text-emerald-100 transition-colors">
-            Offline Mode
-          </span>
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_#10b981]"></div>
-        </div>
-
-        <div className="hidden lg:flex items-center gap-2 text-neutral-600">
+        <div className="hidden lg:flex items-center gap-2 text-neutral-500 bg-white/5 px-3 py-1.5 rounded-full border border-white/5">
           <Clock className="w-3.5 h-3.5" />
           <span className="text-xs font-medium tracking-wide">{today}</span>
+        </div>
+        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-[#0F0F0F] border border-white/10 shadow-inner group cursor-default hover:border-emerald-500/30 transition-colors">
+          <Activity className="w-3.5 h-3.5 text-neutral-500 group-hover:text-emerald-400 transition-colors" />
+          <span className="text-xs font-medium text-neutral-400 group-hover:text-emerald-100 transition-colors">
+            System Active
+          </span>
+          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_#10b981] animate-pulse"></div>
         </div>
       </div>
 
@@ -279,7 +332,7 @@ const Header = ({ user }) => {
         </div>
         <div className="relative group cursor-pointer">
           <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full opacity-0 group-hover:opacity-75 blur transition duration-200"></div>
-          <div className="relative h-10 w-10 rounded-full bg-[#111] flex items-center justify-center text-sm font-bold text-white border border-white/10 z-10">
+          <div className="relative h-10 w-10 rounded-full bg-[#111] flex items-center justify-center text-sm font-bold text-white border border-white/10 z-10 shadow-xl">
             {user.name?.[0].toUpperCase()}
           </div>
         </div>
@@ -287,38 +340,6 @@ const Header = ({ user }) => {
     </header>
   );
 };
-
-const PremiumStatCard = ({ title, value, metric, metricColor, icon: Icon, gradient, iconColor, delay }) => (
-  <div
-    className="relative group bg-[#0A0A0A]/80 backdrop-blur-sm border border-white/5 rounded-3xl p-6 overflow-hidden transition-all duration-300 hover:border-white/10 hover:shadow-2xl hover:shadow-blue-900/10 hover:-translate-y-1"
-    style={{ animation: `fadeInUp 0.6s ease-out ${delay}ms backwards` }}
-  >
-    {/* Inner Gradient Blob */}
-    <div className={`absolute -right-6 -top-6 w-24 h-24 bg-gradient-to-br ${gradient} rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500`}></div>
-
-    <div className="relative z-10">
-      <div className="flex justify-between items-start mb-6">
-        <div className={`p-3 rounded-2xl bg-white/5 border border-white/5 ${iconColor} group-hover:scale-110 transition-transform duration-300`}>
-          <Icon className="w-6 h-6" />
-        </div>
-
-        {/* Metric Badge */}
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/5 backdrop-blur-md">
-          <TrendingUp className={`w-3 h-3 ${metricColor}`} />
-          <span className={`text-xs font-bold ${metricColor}`}>{metric}</span>
-        </div>
-      </div>
-
-      <div className="space-y-1">
-        <h4 className="text-4xl font-bold text-white tracking-tighter tabular-nums">{value}</h4>
-        <div className="flex items-center gap-2">
-          <p className="text-sm text-neutral-500 font-medium">{title}</p>
-          <ChevronRight className="w-3 h-3 text-neutral-600 opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all duration-300" />
-        </div>
-      </div>
-    </div>
-  </div>
-);
 
 const PremiumTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
