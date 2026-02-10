@@ -23,6 +23,7 @@ export default function OutreachChat() {
   const [hasStarted, setHasStarted] = useState(false);
 
   // --- LOGIC STATE ---
+  // --- LOGIC STATE ---
   const [messages, setMessages] = useState([
     {
       role: "assistant",
@@ -36,6 +37,29 @@ export default function OutreachChat() {
   const [activeSendFlow, setActiveSendFlow] = useState(null);
   const [loadingAction, setLoadingAction] = useState(false);
   const bottomRef = useRef(null);
+
+  // --- MENTIONS STATE ---
+  const [contacts, setContacts] = useState([]);
+  const [showMentions, setShowMentions] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [cursorPosition, setCursorPosition] = useState(null);
+  const [mentionedContacts, setMentionedContacts] = useState([]); // Track selected mentions
+
+  // Fetch Contacts
+  useEffect(() => {
+    const fetchContacts = async () => {
+      try {
+        const res = await fetch(`${BACKEND_API_URL}/contacts`);
+        if (res.ok) {
+          const data = await res.json();
+          setContacts(data);
+        }
+      } catch (error) {
+        console.error("Error fetching contacts:", error);
+      }
+    };
+    fetchContacts();
+  }, []);
 
   // Scroll to bottom
   useEffect(() => {
@@ -55,7 +79,19 @@ export default function OutreachChat() {
 
   // --- ACTIONS (Email/WhatsApp/LinkedIn) ---
   const handleSendAction = async (msgIndex, content, type) => {
-    setActiveSendFlow({ msgIndex, type, content, step: 'preview', value: '' });
+    // Attempt to find mention context from the previous user message
+    let prefillValue = "";
+    if (msgIndex > 0 && messages[msgIndex - 1].role === 'user') {
+      const relatedUserMsg = messages[msgIndex - 1];
+      const primaryContact = relatedUserMsg.mentions?.[0];
+      if (primaryContact) {
+        if (type === 'email') prefillValue = primaryContact.email || "";
+        else if (type === 'whatsapp') prefillValue = primaryContact.phone || "";
+        else if (type === 'linkedin') prefillValue = primaryContact.linkedinUrl || primaryContact.name || "";
+      }
+    }
+
+    setActiveSendFlow({ msgIndex, type, content, step: 'preview', value: prefillValue });
   };
 
   const executeSend = async (target, subjectOrText, bodyText) => {
@@ -129,11 +165,20 @@ export default function OutreachChat() {
     if (!input.trim()) return;
     const originalInput = input;
 
+    // Filter mentions to ensure they are still in the input (simple check)
+    const activeMentions = mentionedContacts.filter(c => originalInput.includes(c.name));
+
     // Optimistically add user message
-    const userMsg = { role: "user", type: "text", content: originalInput };
+    const userMsg = {
+      role: "user",
+      type: "text",
+      content: originalInput,
+      mentions: activeMentions // Attach mentions metadata
+    };
     setMessages((prev) => [...prev, userMsg]);
 
     setInput("");
+    setMentionedContacts([]); // Clear mentions for next message
     setIsStreaming(true);
     setStreamingContent("");
 
@@ -252,6 +297,51 @@ export default function OutreachChat() {
       setIsStreaming(false);
     }
   };
+
+  /* --- MENTION HANDLERS --- */
+  const handleInputChange = (e) => {
+    const value = e.target.value;
+    const selectionStart = e.target.selectionStart;
+    setInput(value);
+    setCursorPosition(selectionStart);
+
+    // Detect @ mention
+    const lastAtPos = value.lastIndexOf("@", selectionStart);
+    if (lastAtPos !== -1) {
+      const textAfterAt = value.substring(lastAtPos + 1, selectionStart);
+      // Check if there are spaces, if so verify if it's a valid name part or end of mention
+      if (!textAfterAt.includes(" ") || (textAfterAt.split(" ").length < 3)) { // Allow spaces for full names (e.g. "John Doe")
+        setShowMentions(true);
+        setMentionQuery(textAfterAt);
+        return;
+      }
+    }
+    setShowMentions(false);
+  };
+
+  const handleMentionSelect = (contact) => {
+    const lastAtPos = input.lastIndexOf("@", cursorPosition);
+    if (lastAtPos !== -1) {
+      const before = input.substring(0, lastAtPos);
+      const after = input.substring(cursorPosition);
+      const newValue = `${before}@${contact.name} ${after}`;
+      setInput(newValue);
+      setShowMentions(false);
+
+      // Add to mentioned contacts state
+      setMentionedContacts(prev => {
+        if (!prev.find(c => c._id === contact._id)) {
+          return [...prev, contact];
+        }
+        return prev;
+      });
+      // Reset cursor focus logic if needed, typically input auto-focuses
+    }
+  };
+
+  const filteredContacts = contacts.filter(c =>
+    c.name.toLowerCase().includes(mentionQuery.toLowerCase())
+  );
 
   return (
     <div className="flex h-screen bg-[#020202] text-white overflow-hidden font-sans selection:bg-purple-500/30">
@@ -509,7 +599,20 @@ export default function OutreachChat() {
                                     onConvertAudio={() => handleGenerateAudio(msg.generated_content?.email || msg.streaming_generated_content?.email, msg.id)}
                                     isAudioLoading={loadingAction}
                                     previewMode={true}
-                                    onProceed={() => setActiveSendFlow({ msgIndex: i, type: 'email', content: msg.generated_content?.email || msg.streaming_generated_content?.email, step: 'input' })}
+                                    onProceed={() => {
+                                      // Find related user message (usually the previous one) for contact context
+                                      const relatedUserMsg = i > 0 && messages[i - 1].role === 'user' ? messages[i - 1] : null;
+                                      const primaryContact = relatedUserMsg?.mentions?.[0];
+                                      const prefillValue = primaryContact ? primaryContact.email : "";
+
+                                      setActiveSendFlow({
+                                        msgIndex: i,
+                                        type: 'email',
+                                        content: msg.generated_content?.email || msg.streaming_generated_content?.email,
+                                        step: 'input',
+                                        value: prefillValue
+                                      });
+                                    }}
                                     onCancel={() => { }}
                                   />
                                 )}
@@ -520,7 +623,19 @@ export default function OutreachChat() {
                                     onConvertAudio={() => handleGenerateAudio(msg.generated_content?.linkedin || msg.streaming_generated_content?.linkedin, msg.id)}
                                     isAudioLoading={loadingAction}
                                     previewMode={true}
-                                    onProceed={() => setActiveSendFlow({ msgIndex: i, type: 'linkedin', content: msg.generated_content?.linkedin || msg.streaming_generated_content?.linkedin, step: 'input' })}
+                                    onProceed={() => {
+                                      const relatedUserMsg = i > 0 && messages[i - 1].role === 'user' ? messages[i - 1] : null;
+                                      const primaryContact = relatedUserMsg?.mentions?.[0];
+                                      const prefillValue = primaryContact ? primaryContact.linkedinUrl : ""; // Matching ContactInputStep schema
+
+                                      setActiveSendFlow({
+                                        msgIndex: i,
+                                        type: 'linkedin',
+                                        content: msg.generated_content?.linkedin || msg.streaming_generated_content?.linkedin,
+                                        step: 'input',
+                                        value: prefillValue
+                                      });
+                                    }}
                                     onCancel={() => { }}
                                   />
                                 )}
@@ -531,7 +646,19 @@ export default function OutreachChat() {
                                     onConvertAudio={() => handleGenerateAudio(msg.generated_content?.whatsapp || msg.streaming_generated_content?.whatsapp, msg.id)}
                                     isAudioLoading={loadingAction}
                                     previewMode={true}
-                                    onProceed={() => setActiveSendFlow({ msgIndex: i, type: 'whatsapp', content: msg.generated_content?.whatsapp || msg.streaming_generated_content?.whatsapp, step: 'input' })}
+                                    onProceed={() => {
+                                      const relatedUserMsg = i > 0 && messages[i - 1].role === 'user' ? messages[i - 1] : null;
+                                      const primaryContact = relatedUserMsg?.mentions?.[0];
+                                      const prefillValue = primaryContact ? primaryContact.phone : "";
+
+                                      setActiveSendFlow({
+                                        msgIndex: i,
+                                        type: 'whatsapp',
+                                        content: msg.generated_content?.whatsapp || msg.streaming_generated_content?.whatsapp,
+                                        step: 'input',
+                                        value: prefillValue
+                                      });
+                                    }}
                                     onCancel={() => { }}
                                   />
                                 )}
@@ -623,16 +750,55 @@ export default function OutreachChat() {
               <div ref={bottomRef} className="h-4" />
             </div>
 
+
             {/* Input Area */}
-            <div className="p-6 relative z-40 shrink-0">
+            <div className="p-6 relative z-40 shrink-0 w-full max-w-4xl mx-auto">
+              {/* Mentions Dropdown */}
+              {showMentions && filteredContacts.length > 0 && (
+                <div className="absolute bottom-24 left-6 z-50 w-64 bg-[#111] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-2">
+                  <div className="px-3 py-2 text-[10px] font-bold text-neutral-500 uppercase tracking-wider border-b border-white/5">
+                    Suggested Contacts
+                  </div>
+                  <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                    {filteredContacts.map(contact => (
+                      <button
+                        key={contact._id}
+                        onClick={() => handleMentionSelect(contact)}
+                        className="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 text-left transition-colors"
+                      >
+                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-800 to-blue-900 flex items-center justify-center text-[10px] font-bold text-white border border-white/10">
+                          {contact.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-white font-medium truncate">{contact.name}</div>
+                          {contact.company && <div className="text-[10px] text-neutral-500 truncate">{contact.company}</div>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="max-w-4xl mx-auto relative group">
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl opacity-20 group-focus-within:opacity-60 blur transition duration-500"></div>
                 <div className="relative flex items-center bg-[#0A0A0A] border border-white/10 rounded-2xl px-4 py-3 gap-4 shadow-2xl">
                   <input
                     value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && !isStreaming && sendMessage()}
-                    placeholder="Type your request here..."
+                    onChange={handleInputChange}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !isStreaming) {
+                        if (!showMentions) {
+                          sendMessage();
+                        } else if (filteredContacts.length > 0) {
+                          handleMentionSelect(filteredContacts[0]); // Select first on enter if menu open
+                          // Prevent submit
+                          e.preventDefault();
+                        }
+                      }
+                      // Close mentions on escape
+                      if (e.key === "Escape") setShowMentions(false);
+                    }}
+                    placeholder="Type your request here... Use @ to mention contacts"
                     className="flex-1 bg-transparent outline-none text-base text-white placeholder-neutral-600 font-medium"
                     disabled={isStreaming}
                     autoFocus
