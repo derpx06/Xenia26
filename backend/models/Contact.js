@@ -12,6 +12,8 @@ const ContactSchema = new mongoose.Schema({
     phone: { type: String },
     role: { type: String },
     company: { type: String },
+    linkedinUrl: { type: String },
+    notes: { type: String },
 }, { timestamps: true });
 
 module.exports = mongoose.model("Contact", ContactSchema);

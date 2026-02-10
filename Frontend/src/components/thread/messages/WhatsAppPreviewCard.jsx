@@ -1,11 +1,18 @@
 
 import React, { useState } from 'react';
-import { X, Send, Phone, Video, Search, MoreVertical, Smile, Paperclip, Mic, Loader2, ArrowLeft, ArrowRight } from 'lucide-react';
+import { X, Send, Phone, Video, Search, MoreVertical, Smile, Paperclip, Mic, Loader2, ArrowLeft, ArrowRight, Volume2 } from 'lucide-react';
 
-export function WhatsAppPreviewCard({ content, onSend, onCancel, defaultPhone = "", previewMode = false, onProceed }) {
+export function WhatsAppPreviewCard({ content, onSend, onCancel, defaultPhone = "", previewMode = false, onProceed, audioPath, onConvertAudio, isAudioLoading }) {
     const [phone, setPhone] = useState(defaultPhone);
-    const [message, setMessage] = useState(content);
+    const [message, setMessage] = useState("");
     const [isSending, setIsSending] = useState(false);
+
+    // Sync state with content prop (for streaming)
+    React.useEffect(() => {
+        if (content) {
+            setMessage(content);
+        }
+    }, [content]);
 
     const handleAction = async () => {
         if (previewMode) {
@@ -83,6 +90,31 @@ export function WhatsAppPreviewCard({ content, onSend, onCancel, defaultPhone = 
                     {isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : (previewMode ? <span className="font-bold text-sm">Proceed</span> : <Send className="w-5 h-5 pl-1" />)}
                 </button>
             </div>
+
+            {/* Audio Section */}
+            {(audioPath || previewMode) && (
+                <div className="px-4 py-2 border-t border-gray-200 flex items-center justify-between gap-4" style={{ backgroundColor: '#f0f2f5' }}>
+                    <div className="flex items-center gap-3 flex-1">
+                        {!audioPath ? (
+                            <button
+                                onClick={onConvertAudio}
+                                disabled={isAudioLoading}
+                                className="flex items-center gap-2 px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold transition-colors border border-emerald-200 disabled:opacity-50"
+                            >
+                                {isAudioLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Volume2 className="w-4 h-4" />}
+                                {isAudioLoading ? "Converting..." : "Convert to Audio"}
+                            </button>
+                        ) : (
+                            <audio
+                                src={`http://localhost:8000${audioPath}`}
+                                controls
+                                className="h-8 w-full max-w-xs scale-90 origin-left"
+                            />
+                        )}
+                        <span className="text-[10px] text-gray-400 font-medium">XTTS v2 Preview</span>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -6,8 +6,12 @@ import json
 from ml.application.agent.schemas import AgentRequest, AgentResponse
 from ml.application.agent.streaming import stream_agent_response
 from ml.application.agent.graph import run_agent
+from ml.application.sarge.graph import run_sarge, stream_sarge
 from ml.infrastructure.db.sqlite import get_thread_history, add_message, create_thread, get_all_threads
+from ml.application.sarge.nodes import get_tts
 import uuid
+import os
+import asyncio
 
 router = APIRouter(prefix="/ml", tags=["ML"])
 
@@ -291,3 +295,98 @@ async def get_thread_history_endpoint(thread_id: str):
             status_code=500,
             detail=f"Failed to fetch thread history: {str(e)}"
         )
+
+@router.post("/agent/sarge/chat", response_class=StreamingResponse)
+async def sarge_chat_stream(request: AgentRequest):
+    """
+    Stream SARGE agent responses with granular events (microprocesses).
+    
+    Returns Server-Sent Events stream:
+    - node_start: When a step begins (Router, Profiler, etc)
+    - thought: Internal reasoning logs
+    - result: Final generated content
+    - token: Real-time LLM token streaming
+    """
+    session_id = request.thread_id or str(uuid.uuid4())
+    
+    async def event_generator():
+        try:
+            # Initial event to confirm connection
+            yield f"data: {json.dumps({'type': 'status', 'content': 'SARGE Connected', 'session_id': session_id})}\n\n"
+            
+            async for chunk in stream_sarge(request.message, session_id=session_id):
+                yield f"data: {chunk}\n\n"
+                
+            # Done signal
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        except Exception as e:
+            error_chunk = json.dumps({"type": "error", "content": str(e)})
+            yield f"data: {error_chunk}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
+@router.post("/agent/sarge/chat-sync", response_model=AgentResponse)
+async def sarge_chat_sync(request: AgentRequest):
+    """
+    Synchronous SARGE agent chat.
+    Uses the new SARGE graph with persistence and upgrades.
+    """
+    try:
+        session_id = request.thread_id or str(uuid.uuid4())
+        
+        result = await run_sarge(request.message, session_id=session_id)
+        
+        # Format response to match AgentResponse schema
+        final_content = result.get("generated_content", {})
+        
+        # Flatten content for client if needed, or keep dict
+        # The schema expects dict[str, str] for response, so we pass it directly
+        
+        return AgentResponse(
+            response=final_content,
+            tool_calls=[], # SARGE handles tools internally, doesn't expose raw calls yet
+            iterations=result.get("generation_attempts", 1),
+            model=request.model
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"SARGE chat failed: {str(e)}"
+        )
+@router.post("/agent/sarge/voice")
+async def sarge_voice(request: dict):
+    """
+    Generate audio for a given text on demand.
+    """
+    text = request.get("text")
+    if not text:
+        raise HTTPException(status_code=400, detail="Text is required")
+    
+    try:
+        tts_engine = await asyncio.to_thread(get_tts)
+        
+        # Create static audio dir if it doesn't exist
+        os.makedirs("static/audio", exist_ok=True)
+        
+        filename = f"manual_{uuid.uuid4().hex[:8]}.wav"
+        file_path = os.path.join("static/audio", filename)
+        
+        # Run synthesis in thread
+        await asyncio.to_thread(
+            tts_engine.speak,
+            text=text[:1000],
+            output_path=file_path
+        )
+        
+        return {"audio_url": f"/static/audio/{filename}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -1,11 +1,18 @@
 
 import React, { useState } from 'react';
-import { X, Send, Image, Paperclip, MoreHorizontal, Video, Star, Loader2, ChevronUp, Smile } from 'lucide-react';
+import { X, Send, Image, Paperclip, MoreHorizontal, Video, Star, Loader2, ChevronUp, Smile, Volume2 } from 'lucide-react';
 
-export function LinkedInPreviewCard({ content, onSend, onCancel, defaultRecipient = "", previewMode = false, onProceed }) {
+export function LinkedInPreviewCard({ content, onSend, onCancel, defaultRecipient = "", previewMode = false, onProceed, audioPath, onConvertAudio, isAudioLoading }) {
     const [recipient, setRecipient] = useState(defaultRecipient);
-    const [message, setMessage] = useState(content);
+    const [message, setMessage] = useState("");
     const [isSending, setIsSending] = useState(false);
+
+    // Sync state with content prop (for streaming)
+    React.useEffect(() => {
+        if (content) {
+            setMessage(content);
+        }
+    }, [content]);
 
     const handleAction = async () => {
         if (previewMode) {
@@ -18,7 +25,7 @@ export function LinkedInPreviewCard({ content, onSend, onCancel, defaultRecipien
     };
 
     return (
-        <div className="w-full max-w-lg mx-auto bg-white rounded-t-xl shadow-[0_0_20px_rgba(0,0,0,0.15)] overflow-hidden font-sans border border-gray-300 animate-in slide-in-from-bottom-10 fade-in duration-500">
+        <div className="w-full max-lg mx-auto bg-white rounded-t-xl shadow-[0_0_20px_rgba(0,0,0,0.15)] overflow-hidden font-sans border border-gray-300 animate-in slide-in-from-bottom-10 fade-in duration-500">
             {/* LinkedIn Header */}
             <div className="bg-white border-b border-gray-200 px-3 py-2 flex items-center justify-between relative shadow-sm z-10">
                 <div className="flex items-center gap-3">
@@ -96,6 +103,31 @@ export function LinkedInPreviewCard({ content, onSend, onCancel, defaultRecipien
                     </div>
                 </div>
             </div>
+
+            {/* Audio Section */}
+            {(audioPath || previewMode) && (
+                <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3 flex-1">
+                        {!audioPath ? (
+                            <button
+                                onClick={onConvertAudio}
+                                disabled={isAudioLoading}
+                                className="flex items-center gap-2 px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold transition-colors border border-blue-200 disabled:opacity-50"
+                            >
+                                {isAudioLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Volume2 className="w-4 h-4" />}
+                                {isAudioLoading ? "Converting..." : "Convert to Audio"}
+                            </button>
+                        ) : (
+                            <audio
+                                src={`http://localhost:8000${audioPath}`}
+                                controls
+                                className="h-8 w-full max-w-xs scale-90 origin-left"
+                            />
+                        )}
+                        <span className="text-[10px] text-gray-400 font-medium">XTTS v2 Clone</span>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

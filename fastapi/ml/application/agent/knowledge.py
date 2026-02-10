@@ -134,8 +134,8 @@ class SimpleKnowledgeBase:
                 "prospect_name": prospect.name,
                 "role": prospect.role,
                 "company": prospect.company,
-                "channel": strategy.target_channel,
-                "goal": strategy.goal,
+                "channel": getattr(strategy, 'target_channel', 'Email'),
+                "goal": getattr(strategy, 'goal', 'Outreach'),
                 "industry": prospect.industry or "Unknown"
             }
             
@@ -149,7 +149,7 @@ class SimpleKnowledgeBase:
                 metadatas=[metadata],
                 ids=[doc_id]
             )
-            logger.info(f"💾 KB: Vectorized outreach for {prospect.name} via {strategy.target_channel}")
+            logger.info(f"💾 KB: Vectorized outreach for {prospect.name}")
             
         except Exception as e:
             logger.error(f"❌ KB: Failed to save to Chroma: {e}")

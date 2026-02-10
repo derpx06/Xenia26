@@ -38,6 +38,11 @@ class Settings:
         self.OPENAI_MODEL_ID = os.getenv("OPENAI_MODEL_ID", "gpt-4")
         self.OPENAI_MAX_TOKEN_WINDOW = int(os.getenv("OPENAI_MAX_TOKEN_WINDOW", "8192"))
 
+        # LangSmith Configuration
+        self.LANGCHAIN_TRACING_V2 = os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true"
+        self.LANGCHAIN_API_KEY = os.getenv("LANGCHAIN_API_KEY")
+        self.LANGCHAIN_PROJECT = os.getenv("LANGCHAIN_PROJECT", "Deep-Psych Agent")
+
 
 settings = Settings()
 

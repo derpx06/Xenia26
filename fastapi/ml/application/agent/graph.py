@@ -7,6 +7,7 @@ from typing import Dict, Any, AsyncGenerator, List
 from langgraph.graph import StateGraph, END
 from loguru import logger
 from functools import lru_cache
+from langsmith import traceable
 
 # Import the new schema and nodes
 from .schemas import AgentState
@@ -67,6 +68,7 @@ def create_agent_graph():
 
 # --- Entry Points for Server Compatibility ---
 
+@traceable(name="Run Agent (Batch)")
 async def run_agent(
     target_url: str = None, # Made Optional
     user_instruction: str = "Introduce yourself",
@@ -91,6 +93,7 @@ async def run_agent(
     result = await graph.ainvoke(initial_state)
     return result
 
+@traceable(name="Stream Agent")
 async def stream_agent(
     user_instruction: str,
     target_url: str = None,

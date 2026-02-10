@@ -6,6 +6,7 @@ import {
     Mic, Square, Play, Pause, Upload
 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
+import ContactList from "../components/ContactList";
 
 const BACKEND_URL = "http://localhost:8080/api";
 
@@ -454,6 +455,17 @@ export default function Profile() {
                                                     <SocialInput label="Instagram" name="social_instagram" value={formData.socials.instagram} onChange={handleChange} icon={Instagram} color="group-hover:text-[#E1306C]" />
                                                 </div>
                                             </div>
+                                        </div>
+                                    </section>
+
+                                    {/* Section 3: Contacts */}
+                                    <section>
+                                        <div className="flex items-center gap-2 mb-6">
+                                            <div className="p-1.5 rounded bg-emerald-500/10 text-emerald-400"><User className="w-4 h-4" /></div>
+                                            <h3 className="text-sm font-bold uppercase tracking-wider text-neutral-300">Saved Contacts</h3>
+                                        </div>
+                                        <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-6 md:p-8">
+                                            <ContactList />
                                         </div>
                                     </section>
 
