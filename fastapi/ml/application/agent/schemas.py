@@ -50,7 +50,7 @@ class AgentState(BaseModel):
     # Inputs
     target_url: Optional[str] = None
     user_instruction: str # CHANGED: Replaces 'user_offer' to be more generic
-    conversation_history: List[Dict[str, str]] = Field(default_factory=list) # List of messages
+    conversation_history: List[Dict[str, Any]] = Field(default_factory=list) # List of messages
     
     # Internal Memory
     prospect: Optional[ProspectProfile] = None

@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import json
 
-from ml.application.agent.schemas import AgentRequest, AgentResponse
+from ml.application.agent.schemas import AgentRequest, AgentResponse, AgentStreamChunk
 from ml.application.agent.streaming import stream_agent_response
 from ml.application.agent.graph import run_agent
 from ml.infrastructure.db.sqlite import get_thread_history, add_message, create_thread, get_all_threads
@@ -22,6 +22,41 @@ import os
 import asyncio
 
 router = APIRouter(prefix="/ml", tags=["ML"])
+
+_SIMPLE_QUERIES = {
+    "hi",
+    "hello",
+    "hey",
+    "hey there",
+    "hiya",
+    "how are you",
+    "how are you doing",
+    "how r u",
+    "how can you help me",
+    "what can you do",
+    "what do you do",
+    "who are you",
+    "help",
+    "help me",
+}
+
+
+def _normalize_simple_query(text: str) -> str:
+    import re
+    normalized = text.strip().lower()
+    normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def _get_simple_response(message: str) -> str | None:
+    normalized = _normalize_simple_query(message)
+    if normalized in _SIMPLE_QUERIES:
+        return (
+            "Hi! I can help with outreach drafts, research summaries, and general questions. "
+            "Tell me what you want to do."
+        )
+    return None
 
 
 @router.get("/models")
@@ -127,6 +162,45 @@ async def agent_chat_stream(request: AgentRequest):
         }
     """
     try:
+        simple_response = _get_simple_response(request.message)
+        if simple_response:
+            thread_id = request.thread_id or str(uuid.uuid4())
+
+            add_message(
+                thread_id=thread_id,
+                role="user",
+                content=request.message
+            )
+            add_message(
+                thread_id=thread_id,
+                role="assistant",
+                content=simple_response
+            )
+
+            async def stream_simple():
+                yield f"data: {json.dumps({'thread_id': thread_id})}\n\n"
+                response_chunk = AgentStreamChunk(
+                    type="response",
+                    content=simple_response
+                )
+                yield f"data: {response_chunk.model_dump_json()}\n\n"
+                done_chunk = AgentStreamChunk(
+                    type="done",
+                    content=simple_response,
+                    metadata={"iterations": 0, "simple": True}
+                )
+                yield f"data: {done_chunk.model_dump_json()}\n\n"
+
+            return StreamingResponse(
+                stream_simple(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                }
+            )
+
         # 1. Handle Thread ID
         thread_id = request.thread_id or str(uuid.uuid4())
         
@@ -223,6 +297,15 @@ async def agent_chat_sync(request: AgentRequest):
         }
     """
     try:
+        simple_response = _get_simple_response(request.message)
+        if simple_response:
+            return AgentResponse(
+                response=simple_response,
+                tool_calls=[],
+                iterations=0,
+                model=request.model
+            )
+
         # Extract target_url and user_instruction
         import re
         url_pattern = r'https?://[^\s]+'

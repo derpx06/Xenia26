@@ -23,6 +23,7 @@ from .helpers import (
     infer_seniority_from_role,
     infer_style_signals,
     parse_profile_notes,
+    parse_structured_lead_data,
     extract_tone_from_text,
     ensure_prospect,
     ensure_psych,
@@ -42,6 +43,13 @@ async def hunter_node(state: AgentState) -> AgentState:
     logs.append("HUNTER: Starting research phase...")
     url = state.target_url
     instruction = state.user_instruction
+
+    structured = parse_structured_lead_data(instruction or "")
+    if structured:
+        structured.source_urls = []
+        kb.save_prospect(structured)
+        logs.append(f"HUNTER: Parsed structured lead data for {structured.name}.")
+        return {"prospect": structured, "logs": logs}
 
     url_pattern = r"https?://[^\s]+"
     instruction_urls = re.findall(url_pattern, instruction) if instruction else []
@@ -374,9 +382,19 @@ async def strategist_node(state: AgentState) -> AgentState:
         inferred_channels = list(dict.fromkeys(inferred_channels + ["email", "whatsapp", "sms", "linkedin_dm", "instagram_dm"]))
 
     if not inferred_channels:
-        inferred_channels = ["email", "whatsapp", "linkedin_dm", "instagram_dm"]
+        if any(k in (instruction or "").lower() for k in ["write", "draft", "generate", "compose", "outreach"]):
+            inferred_channels = ["email"]
+        else:
+            inferred_channels = ["general_response"]
 
-    if inferred_channels and any(k in (instruction or "").lower() for k in ["generate", "create", "write", "draft"]):
+    should_fast_path = (
+        inferred_channels
+        and any(k in (instruction or "").lower() for k in ["generate", "create", "write", "draft"])
+        and len((instruction or "")) < 220
+        and not any(k in (instruction or "").lower() for k in ["objective", "requirements", "output format", "input data", "public profile"])
+    )
+
+    if should_fast_path:
         key_points = []
         if prospect.recent_activity:
             key_points.append(prospect.recent_activity[0])
@@ -455,6 +473,7 @@ async def scribe_node(state: AgentState) -> AgentState:
     prospect: ProspectProfile = ensure_prospect(state.prospect)
     psych: PsychProfile = ensure_psych(state.psych)
     critique: CritiqueResult = ensure_critique(state.latest_critique)
+    instruction = state.user_instruction or ""
 
     current_drafts = state.drafts
     history = state.conversation_history
@@ -492,9 +511,32 @@ async def scribe_node(state: AgentState) -> AgentState:
             "logs": logs
         }
 
+    wants_subject = "subject" in instruction.lower() and "body" in instruction.lower()
+
     async def generate_channel(channel: str) -> tuple[str, str]:
+        if channel == "general_response":
+            prompt = f"""You are a helpful assistant. Answer the user's request directly and concisely.
+Do not invent personal or company details. If the user is greeting you, respond briefly and ask how you can help.
+
+USER REQUEST:
+{instruction}
+"""
+            try:
+                response = await llm_creative.ainvoke(
+                    prompt,
+                    config={"temperature": 0.2, "num_predict": 200}
+                )
+                return (channel, response.content.strip())
+            except Exception as e:
+                logger.error(f"General response failed: {e}")
+                return (channel, "Hi! How can I help you?")
+
         rules = CHANNEL_RULES.get(channel, "Standard professional text.")
         comments = f"FIX: {critique.feedback}" if (critique and not critique.passed) else ""
+
+        subject_note = ""
+        if channel == "email" and wants_subject:
+            subject_note = "Output format:\nSubject: <short subject>\nBody: <email body>\n"
 
         prompt = f"""You are an elite copywriter.
 
@@ -527,6 +569,8 @@ HISTORY_CONTEXT:
 PLATFORM RULES:
 {rules}
 
+{subject_note}
+
 PERSONALIZATION REQUIREMENTS:
 - Must explicitly include the person's name OR role AND the company.
 - Must include at least one specific interest or recent activity detail.
@@ -556,6 +600,9 @@ IMPORTANT: No generic corporate tone. Use concrete details from the persona. Out
     results = []
     if len(channels_to_generate) > 1:
         channels_list = ", ".join(channels_to_generate)
+        subject_note = ""
+        if "email" in channels_to_generate and wants_subject:
+            subject_note = "For the email channel, include a 'Subject:' line followed by 'Body:' and the email body."
         prompt = f"""You are an elite copywriter.
 
 {QUALITY_RUBRIC_TEXT}
@@ -588,6 +635,8 @@ HISTORY_CONTEXT:
 
 PLATFORM RULES:
 {chr(10).join([f"{ch}: {CHANNEL_RULES.get(ch, 'Standard professional text.')}" for ch in channels_to_generate])}
+
+{subject_note}
 
 PERSONALIZATION REQUIREMENTS (apply to each channel):
 - Must explicitly include the person's name OR role AND the company.

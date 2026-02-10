@@ -157,6 +157,14 @@ def _extract_label(text: str, label: str) -> Optional[str]:
     return m.group(1).strip() if m else None
 
 
+def _extract_any_label(text: str, labels: List[str]) -> Optional[str]:
+    for label in labels:
+        val = _extract_label(text, label)
+        if val:
+            return val
+    return None
+
+
 def _split_list(value: Optional[str]) -> List[str]:
     if not value:
         return []
@@ -191,6 +199,109 @@ def parse_profile_notes(text: str) -> Optional[ProspectProfile]:
         primary_language=language,
         summary=summary,
         raw_bio=text
+    )
+    profile.seniority = infer_seniority_from_role(role)
+    return profile
+
+
+def parse_structured_lead_data(text: str) -> Optional[ProspectProfile]:
+    """
+    Parse structured outreach briefs like:
+    Person Name: ...
+    Current Role: ...
+    Company: ...
+    Company Domain: ...
+    Experience Level: ...
+    Public Profile Signals:
+    - ...
+    """
+    if not text:
+        return None
+    text_lc = text.lower()
+    if "person name:" not in text_lc and "current role:" not in text_lc and "company:" not in text_lc:
+        return None
+
+    name = _extract_any_label(text, ["Person Name", "Name"])
+    role = _extract_any_label(text, ["Current Role", "Role", "Title"])
+    company = _extract_any_label(text, ["Company", "Company Name"])
+    if not (name and role and company):
+        return None
+
+    industry = _extract_any_label(text, ["Company Domain", "Industry", "Domain"])
+    experience = _extract_any_label(text, ["Experience Level", "Experience"])
+    style = _extract_any_label(text, ["Writing Style", "Tone", "Style"])
+
+    signals_section = ""
+    if "public profile signals:" in text_lc:
+        parts = re.split(r"public profile signals:\s*", text, flags=re.IGNORECASE)
+        if len(parts) > 1:
+            signals_section = parts[1]
+
+    bullets = []
+    if signals_section:
+        for line in signals_section.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("=") or line.lower().startswith("objective") or line.lower().startswith("email requirements") or line.lower().startswith("output format"):
+                break
+            if line.startswith("-"):
+                bullets.append(line.lstrip("-").strip())
+
+    interests = []
+    recent = []
+    known_tags = [
+        ("python", "Python"),
+        ("backend", "backend systems"),
+        ("api", "APIs"),
+        ("distributed", "distributed systems"),
+        ("performance", "performance optimization"),
+        ("scalability", "scalable systems"),
+        ("payments", "payments"),
+        ("lending", "lending"),
+        ("fintech", "FinTech"),
+    ]
+
+    for b in bullets:
+        b_lc = b.lower()
+        if "recent" in b_lc or "shared a post" in b_lc or "recently" in b_lc:
+            recent.append(b)
+        for key, tag in known_tags:
+            if key in b_lc and tag not in interests:
+                interests.append(tag)
+
+    summary_parts = []
+    if experience:
+        summary_parts.append(f"Experience: {experience}")
+    if style:
+        summary_parts.append(f"Style: {style}")
+    if bullets:
+        summary_parts.append("Signals: " + "; ".join(bullets))
+    summary = " | ".join(summary_parts) if summary_parts else None
+
+    raw_bio_parts = [
+        f"Name: {name}",
+        f"Role: {role}",
+        f"Company: {company}",
+    ]
+    if industry:
+        raw_bio_parts.append(f"Industry: {industry}")
+    if experience:
+        raw_bio_parts.append(f"Experience: {experience}")
+    if style:
+        raw_bio_parts.append(f"Tone: {style}")
+    if bullets:
+        raw_bio_parts.append("Signals: " + "; ".join(bullets))
+
+    profile = ProspectProfile(
+        name=name,
+        role=role,
+        company=company,
+        industry=industry,
+        interests=interests,
+        recent_activity=recent,
+        summary=summary,
+        raw_bio="\n".join(raw_bio_parts)
     )
     profile.seniority = infer_seniority_from_role(role)
     return profile
