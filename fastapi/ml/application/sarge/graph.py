@@ -186,56 +186,56 @@ async def run_sarge(user_input: str, session_id: str = None) -> dict:
     if memory:
         history = memory.get_history(session_id, limit=10)
     
-    # Check if query is simple enough for direct response
-    if await is_simple_chat_intent(user_input):
-        logger.info("⚡ SARGE: Simple query detected - direct LLM response")
-        
-        engine = get_engine()
-        
-        try:
-            # Add context from memory for simple queries to be smarter
-            context_str = ""
-            if history:
-                context_str = "Context:\n" + "\n".join([f"{m['role']}: {m['content']}" for m in history[-3:]])
-            
-            response = engine.creative.invoke(
-                f"""You are an Outreach Assistant. 
-                
-You DO NOT answer general questions like weather, news, or coding. If a user asks these, politely reply that you only help with cold outreach.
-
-{context_str}
-
-User question: {user_input}
-
-Respond briefly and naturally. If they greet you, be friendly."""
-            )
-            
-            # Save turn if session exists
-            if memory:
-                memory.save_turn(session_id, user_input, response.content)
-            
-            return {
-                "raw_input": user_input,
-                "router_decision": "direct",
-                "prospect_data": None,
-                "rag_context": [],
-                "generated_content": {"chat_response": response.content},
-                "conversation_history": history + [
-                    {"role": "user", "content": user_input},
-                    {"role": "assistant", "content": response.content}
-                ]
-            }
-        except Exception as e:
-            logger.error(f"⚡ SARGE: Direct response failed - {e}")
-            # Fallback to graph
-    
-    # --- TURBO: Heuristic Intent Detection ---
-    heuristic_keywords = ["draft", "write", "generate", "create", "email", "linkedin", "message"]
+    # --- TURBO: Heuristic Intent Detection (FASTEST BYPASS) ---
+    heuristic_keywords = ["draft", "write", "generate", "create", "email", "linkedin", "message", "prospect", "analyze"]
     if any(word in user_input.lower() for word in heuristic_keywords):
-        logger.info("⚡ SARGE: Heuristic HIT - Forcing 'generate' intent")
+        logger.info("⚡ SARGE: Heuristic HIT - Forcing 'generate' intent (Bypassing Intent LLM)")
         router_decision = "generate"
         router_confidence = 100.0
     else:
+        # Check if query is simple enough for direct response
+        if await is_simple_chat_intent(user_input):
+            logger.info("⚡ SARGE: Simple query detected - direct LLM response")
+            
+            engine = get_engine()
+            
+            try:
+                # Add context from memory for simple queries to be smarter
+                context_str = ""
+                if history:
+                    context_str = "Context:\n" + "\n".join([f"{m['role']}: {m['content']}" for m in history[-3:]])
+                
+                response = await engine.creative.ainvoke(
+                    f"""You are an Outreach Assistant. 
+                    
+    You DO NOT answer general questions like weather, news, or coding. If a user asks these, politely reply that you only help with cold outreach.
+    
+    {context_str}
+    
+    User question: {user_input}
+    
+    Respond briefly and naturally. If they greet you, be friendly."""
+                )
+                
+                # Save turn if session exists
+                if memory:
+                    memory.save_turn(session_id, user_input, response.content)
+                
+                return {
+                    "raw_input": user_input,
+                    "router_decision": "direct",
+                    "prospect_data": None,
+                    "rag_context": [],
+                    "generated_content": {"chat_response": response.content},
+                    "conversation_history": history + [
+                        {"role": "user", "content": user_input},
+                        {"role": "assistant", "content": response.content}
+                    ]
+                }
+            except Exception as e:
+                logger.error(f"⚡ SARGE: Direct response failed - {e}")
+                # Fallback to graph
+        
         router_decision = ""
         router_confidence = 0.0
 
@@ -300,57 +300,57 @@ async def stream_sarge(user_input: str, session_id: str = None):
     if memory:
         history = memory.get_history(session_id, limit=10)
     
-    # Check for simple query first
-    if await is_simple_chat_intent(user_input):
-        logger.info("⚡ SARGE: Simple stream query detected (LLM-detected)")
-        
-        # IMMEDIATELY yield node_start for UI
-        yield json.dumps({
-            "type": "node_start",
-            "node": "CHAT",
-            "content": "Conversational reply..."
-        })
-        
-        # Add context for simple query
-        context_str = ""
-        if history:
-            context_str = "Context:\n" + "\n".join([f"{m['role']}: {m['content']}" for m in history[-3:]])
-            
-        prompt = f"""You are an Outreach Assistant. 
-Respond briefly and naturally.
-
-{context_str}
-
-User: {user_input}"""
-
-        engine = get_engine()
-        full_response = ""
-        
-        async for chunk in engine.creative.astream(prompt):
-            content = chunk.content
-            if content:
-                full_response += content
-                yield json.dumps({
-                    "type": "token",
-                    "content": content
-                })
-        
-        # Save turn
-        if memory and full_response:
-            memory.save_turn(session_id, user_input, full_response)
-            
-        yield json.dumps({
-            "type": "done"
-        })
-        return
-
-    # --- TURBO: Heuristic Intent Detection ---
-    heuristic_keywords = ["draft", "write", "generate", "create", "email", "linkedin", "message"]
+    # --- TURBO: Heuristic Intent Detection (FASTEST BYPASS) ---
+    heuristic_keywords = ["draft", "write", "generate", "create", "email", "linkedin", "message", "prospect", "analyze"]
     if any(word in user_input.lower() for word in heuristic_keywords):
-        logger.info("⚡ SARGE: Heuristic HIT (Stream) - Forcing 'generate' intent")
+        logger.info("⚡ SARGE: Heuristic HIT (Stream) - Forcing 'generate' intent (Bypassing Intent LLM)")
         router_decision = "generate"
         router_confidence = 100.0
     else:
+        # Check for simple query first
+        if await is_simple_chat_intent(user_input):
+            logger.info("⚡ SARGE: Simple stream query detected (LLM-detected)")
+            
+            # IMMEDIATELY yield node_start for UI
+            yield json.dumps({
+                "type": "node_start",
+                "node": "CHAT",
+                "content": "Conversational reply..."
+            })
+            
+            # Add context for simple query
+            context_str = ""
+            if history:
+                context_str = "Context:\n" + "\n".join([f"{m['role']}: {m['content']}" for m in history[-3:]])
+                
+            prompt = f"""You are an Outreach Assistant. 
+    Respond briefly and naturally.
+    
+    {context_str}
+    
+    User: {user_input}"""
+
+            engine = get_engine()
+            full_response = ""
+            
+            async for chunk in engine.creative.astream(prompt):
+                content = chunk.content
+                if content:
+                    full_response += content
+                    yield json.dumps({
+                        "type": "token",
+                        "content": content
+                    })
+            
+            # Save turn
+            if memory and full_response:
+                memory.save_turn(session_id, user_input, full_response)
+                
+            yield json.dumps({
+                "type": "done"
+            })
+            return
+        
         router_decision = ""
         router_confidence = 0.0
 
@@ -374,45 +374,48 @@ User: {user_input}"""
     })
     
     # Use astream_events for granular updates
-    async for event in graph.astream_events(initial_state, version="v1"):
+    async for event in graph.astream_events(initial_state, version="v2"):
         kind = event["event"]
         
         # 1. Node Transitions (Process Steps)
-        # Standardize node names for frontend mapping
-        # Broaden check to include common naming variations in astream_events
-        node_name = event.get("name", "").lower()
-        if kind == "on_chain_start" and any(n in node_name for n in ["router", "profiler", "retriever", "writer", "critic", "style_inferrer", "voice"]):
+        # Using version v2 names: on_chain_start -> on_chain_start
+        # Metadata 'langgraph_node' is the reliable way to identify which step is running
+        node_name = event.get("metadata", {}).get("langgraph_node")
+        
+        if kind == "on_chain_start" and node_name in ["router", "profiler", "retriever", "writer", "critic", "style_inferrer", "voice"]:
             yield json.dumps({
                 "type": "node_start",
-                "node": event["name"].upper(),
-                "content": f"Entering {event['name'].upper()}..."
+                "node": node_name.upper(),
+                "content": f"Entering {node_name.upper()}..."
             })
             
         # 2. Step Outputs (Thoughts/Logs)
-        elif kind == "on_chain_end" and event["name"] in ["router", "profiler", "retriever", "writer", "critic", "style_inferrer", "voice"]:
+        elif kind == "on_chain_end" and node_name in ["router", "profiler", "retriever", "writer", "critic", "style_inferrer", "voice"]:
             output = event["data"].get("output")
-            if output:
+            if output and isinstance(output, dict):
                 # Filter out heavy content, keep reasoning/status
-                display_output = {k:v for k,v in output.items() if k not in ["generated_content", "raw_input", "conversation_history"]}
-                yield json.dumps({
-                    "type": "thought",
-                    "node": event["name"].upper(),
-                    "content": display_output
-                })
+                display_output = {k:v for k,v in output.items() if k not in ["generated_content", "raw_input", "conversation_history", "prospect_data", "writing_style"]}
+                if display_output:
+                    yield json.dumps({
+                        "type": "thought",
+                        "node": node_name.upper(),
+                        "content": display_output
+                    })
 
         # 3. Final Content Result (Yield on Writer for immediate display, then on Voice for audio)
-        elif kind == "on_chain_end" and event["name"] in ["writer", "voice", "chat"]:
+        elif kind == "on_chain_end" and node_name in ["writer", "voice", "chat"]:
             output = event["data"].get("output", {})
-            content = output.get("generated_content", {})
-            if content:
-                yield json.dumps({
-                    "type": "result",
-                    "content": content,
-                    "metadata": {
-                        "attempts": output.get("generation_attempts", 1),
-                        "channels": list(content.keys())
-                    }
-                })
+            if isinstance(output, dict):
+                content = output.get("generated_content", {})
+                if content:
+                    yield json.dumps({
+                        "type": "result",
+                        "content": content,
+                        "metadata": {
+                            "attempts": output.get("generation_attempts", 1),
+                            "channels": list(content.keys())
+                        }
+                    })
         
         # 4. LLM Token Streaming
         elif kind == "on_chat_model_stream":

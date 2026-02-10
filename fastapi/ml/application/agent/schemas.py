@@ -41,28 +41,31 @@ class CritiqueResult(BaseModel):
     feedback: str
     passed: bool
 
-class AgentState(TypedDict):
+class AgentState(BaseModel):
     # Inputs
-    target_url: str
+    target_url: Optional[str] = None
     user_instruction: str # CHANGED: Replaces 'user_offer' to be more generic
-    conversation_history: List[Dict[str, str]] # List of messages
+    conversation_history: List[Dict[str, str]] = Field(default_factory=list) # List of messages
     
     # Internal Memory
-    prospect: Optional[ProspectProfile]
-    psych: Optional[PsychProfile]
-    strategy: Optional[StrategyBrief]
+    prospect: Optional[ProspectProfile] = None
+    psych: Optional[PsychProfile] = None
+    strategy: Optional[StrategyBrief] = None
     
     # Drafting
-    drafts: Dict[str, str] # Keyed by channel
-    latest_critique: Optional[CritiqueResult]
-    revision_count: int
+    drafts: Dict[str, str] = Field(default_factory=dict) # Keyed by channel
+    latest_critique: Optional[CritiqueResult] = None
+    revision_count: int = 0
     
     # Hive Mind Routing
-    next_step: Literal["hunter", "profiler", "strategist", "scribe", "critic", "end"]
+    next_step: Optional[Literal["hunter", "profiler", "strategist", "scribe", "critic", "end"]] = None
     
     # Final Output
-    final_output: Optional[Dict[str, str]] # Keyed by channel
-    logs: List[str]
+    final_output: Optional[Dict[str, str]] = None # Keyed by channel
+    logs: List[str] = Field(default_factory=list)
+
+    class Config:
+        arbitrary_types_allowed = True
 
     
 class Message(BaseModel):
@@ -105,8 +108,8 @@ class AgentStreamChunk(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 class AgentResponse(BaseModel):
-    """Final aggregated response."""
-    response: Dict[str, str] # Changed to Dict for multi-channel
-    tool_calls: List[Dict[str, Any]] = Field(default_factory=list)
-    iterations: int
-    model: str
+    """Final aggregated response for the API."""
+    response: Any = Field(..., description="Final text or structured output")
+    tool_calls: List[Dict[str, Any]] = Field(default_factory=list, description="Tools used during execution")
+    iterations: int = Field(0, description="Number of graph steps taken")
+    model: str = Field(..., description="Model used")

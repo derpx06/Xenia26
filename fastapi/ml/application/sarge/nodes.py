@@ -78,7 +78,7 @@ User: {state['raw_input']}
 Respond briefly and helpfully in the context of cold outreach ONLY."""
     
     try:
-        response = engine.creative.invoke(prompt)
+        response = await engine.creative.ainvoke(prompt)
         
         # Update conversation history
         new_message_user = {"role": "user", "content": state['raw_input']}
@@ -205,48 +205,35 @@ STRICT: DO NOT invent topics. Only extract what is explicitly or strongly implie
             
         logger.info(f"🔍 PROFILER: Extracted profile for {profile_dict['name']}")
         
-        # --- PHASE 3: NEWS JACKING & TOPIC SEARCH ---
-        research_context = []
+        # --- PHASE 3: NEWS JACKING & TOPIC SEARCH (PARALLELIZED) ---
+        research_tasks = []
         company = profile_dict.get("company")
         name = profile_dict.get("name")
         topics = profile_dict.get("research_queries", [])
         
-        # 1. Target Topic Search (Highest Priority for accuracy)
+        # 1. Target Topic Search
         for topic in topics:
-            logger.info(f"📡 RESEARCH: Searching for topic: {topic}")
-            try:
-                res = await duckduckgo_search.ainvoke({"query": f"{topic} latest details 2026"})
-                research_context.append(f"TOPIC RESEARCH ({topic}):\n{res}")
-            except Exception as e:
-                logger.warning(f"📡 RESEARCH: Topic search failed for '{topic}' - {e}")
+            logger.info(f"📡 RESEARCH: Queuing topic search: {topic}")
+            research_tasks.append(duckduckgo_search.ainvoke({"query": f"{topic} latest details 2026"}))
 
         # 2. Company/News Search
         if company and company not in ["Unknown", "your organization"]:
-            logger.info(f"📡 RESEARCH: Searching for news about {company}")
-            try:
-                res = await duckduckgo_search.ainvoke({"query": f"recent news {company} 2026"})
-                research_context.append(f"COMPANY NEWS ({company}):\n{res}")
-                
-                # Background if info sparse
-                if name and name not in ["Unknown", "Unknown Prospect"]:
-                    wiki_res = await wikipedia_search.ainvoke({"query": f"{name} {company}"})
-                    if "Wikipedia Summary" in wiki_res:
-                         research_context.append(f"WIKIPEDIA BACKGROUND ({name}):\n{wiki_res}")
-            except Exception as e:
-                logger.warning(f"📡 RESEARCH: Company search failed - {e}")
+            logger.info(f"📡 RESEARCH: Queuing news search for {company}")
+            research_tasks.append(duckduckgo_search.ainvoke({"query": f"recent news {company} 2026"}))
                 
         # 3. Individual Search (Fallback)
-        elif name and name not in ["Unknown", "Unknown Prospect"]:
-            logger.info(f"📡 RESEARCH: Searching for background on {name}")
-            try:
-                res = await duckduckgo_search.ainvoke({"query": f"{name} professional background 2026"})
-                research_context.append(f"INDIVIDUAL PROFILE ({name}):\n{res}")
-                
-                wiki_res = await wikipedia_search.ainvoke({"query": name})
-                if "Wikipedia Summary" in wiki_res:
-                    research_context.append(f"WIKIPEDIA SUMMARY ({name}):\n{wiki_res}")
-            except Exception as e:
-                logger.warning(f"📡 RESEARCH: Individual search failed - {e}")
+        if name and name not in ["Unknown", "Unknown Prospect"]:
+            logger.info(f"📡 RESEARCH: Queuing background search for {name}")
+            research_tasks.append(duckduckgo_search.ainvoke({"query": f"{name} professional background 2026"}))
+
+        # Run all searches in parallel
+        if research_tasks:
+            results = await asyncio.gather(*research_tasks, return_exceptions=True)
+            for res in results:
+                if isinstance(res, str):
+                    research_context.append(res)
+                elif isinstance(res, Exception):
+                    logger.warning(f"📡 RESEARCH: A search task failed - {res}")
 
         final_context = "\n\n---\n\n".join(research_context)
         
@@ -295,7 +282,7 @@ async def strategist_node(state: AgentState) -> AgentState:
 
     # Setup structured output
     llm_client = instructor.from_openai(
-        openai.OpenAI(
+        openai.AsyncOpenAI(
             base_url="http://localhost:11434/v1",
             api_key="ollama"
         ),
@@ -329,7 +316,7 @@ Required Output:
 4. recommended_tone: Nuanced tone suggestion (e.g. "approachable but technical")."""
 
     try:
-        strategy: StrategyBrief = llm_client.chat.completions.create(
+        strategy: StrategyBrief = await llm_client.chat.completions.create(
             model=engine.model_name,
             response_model=StrategyBrief,
             messages=[

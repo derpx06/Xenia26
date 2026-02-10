@@ -21,7 +21,7 @@ def route_supervisor(state: AgentState) -> str:
     """
     Reads the supervisor's decision and routes to the next node.
     """
-    return state.get("next_step", END)
+    return state.next_step or END
 
 @lru_cache(maxsize=1)
 def create_agent_graph():

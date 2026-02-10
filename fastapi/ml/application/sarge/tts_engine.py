@@ -1,27 +1,15 @@
 from TTS.api import TTS
+from ml.application.sarge.openvoice_engine import OpenVoiceEngine
 import torch
 from loguru import logger
 
-class XTTSEngine:
+class XTTSEngine(OpenVoiceEngine):
+    """
+    Backwards compatibility wrapper for renamed TTS engine.
+    """
     def __init__(self, speaker_wav=None, language="en"):
-        import os
-        os.environ["COQUI_TOS_AGREED"] = "1"
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info(f"🎙️ TTS: Initializing XTTS v2 on {self.device}")
-
-        self.tts = TTS(
-            model_name="tts_models/multilingual/multi-dataset/xtts_v2",
-            gpu=self.device == "cuda"
-        )
-
-        self.speaker_wav = speaker_wav
-        self.language = language
-
-    def speak(self, text: str, output_path: str):
-        logger.info(f"🎙️ TTS: Synthesizing to {output_path} (Language: {self.language})")
-        self.tts.tts_to_file(
-            text=text,
-            speaker_wav=self.speaker_wav,
-            language=self.language,
-            file_path=output_path
-        )
+        super().__init__(speaker_wav=speaker_wav, language=language)
+        
+    def tts_to_file(self, text, file_path, speaker_wav=None, language="en-us"):
+        # Interface mapping for nodes.py
+        return self.speak(text, file_path)

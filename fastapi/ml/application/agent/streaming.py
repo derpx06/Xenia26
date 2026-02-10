@@ -80,16 +80,17 @@ async def stream_agent_response(
             
             # If we have a final output, send it as the response
             if final_output:
+                content_str = json.dumps(final_output) if isinstance(final_output, (dict, list)) else str(final_output)
                 chunk = AgentStreamChunk(
                     type="response",
-                    content=final_output
+                    content=content_str
                 )
                 yield f"data: {chunk.model_dump_json()}\n\n"
                 
                 # Send done signal
                 done_chunk = AgentStreamChunk(
                     type="done",
-                    content=final_output,
+                    content=content_str,
                     metadata={"iterations": iteration_count}
                 )
                 yield f"data: {done_chunk.model_dump_json()}\n\n"
