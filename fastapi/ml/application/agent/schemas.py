@@ -17,6 +17,11 @@ class ProspectProfile(BaseModel):
     # New fields for better context
     industry: Optional[str] = Field(default=None)
     location: Optional[str] = Field(default=None)
+    seniority: Optional[str] = Field(default=None)
+    interests: List[str] = Field(default_factory=list)
+    primary_language: Optional[str] = Field(default=None)
+    summary: Optional[str] = Field(default=None)
+    source_urls: List[str] = Field(default_factory=list)
     
 class PsychProfile(BaseModel):
     disc_type: Literal["D", "I", "S", "C"]

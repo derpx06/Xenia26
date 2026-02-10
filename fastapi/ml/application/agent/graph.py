@@ -1,49 +1,88 @@
 """
 Agent graph implementation using LangGraph.
-Implements the 'Deep-Psych' Superior Agent Pattern (DCG Architecture).
+Implements the 'Deep-Psych' Superior Agent Pattern with parallel analysis.
 """
-import re
+import asyncio
 from typing import Dict, Any, AsyncGenerator, List
+from types import SimpleNamespace
 from langgraph.graph import StateGraph, END
 from loguru import logger
 from functools import lru_cache
 from langsmith import traceable
 
-# Import the new schema and nodes
 from .schemas import AgentState
 from .nodes import (
-    hunter_node, profiler_node, strategist_node, 
+    hunter_node, profiler_node, strategist_node,
     scribe_node, critic_node
 )
 from .supervisor import supervisor_node
 
+
+def _state_get(state: AgentState, key: str, default=None):
+    if isinstance(state, dict):
+        return state.get(key, default)
+    return getattr(state, key, default)
+
+
+def _state_to_dict(state: AgentState) -> Dict[str, Any]:
+    if isinstance(state, dict):
+        return dict(state)
+    if hasattr(state, "model_dump"):
+        return state.model_dump()
+    if hasattr(state, "__dict__"):
+        return dict(state.__dict__)
+    return dict(state)
+
+
+def _state_to_namespace(state: AgentState) -> SimpleNamespace:
+    return SimpleNamespace(**_state_to_dict(state))
+
+
 def route_supervisor(state: AgentState) -> str:
+    return _state_get(state, "next_step") or END
+
+
+async def parallel_analysis_node(state: AgentState) -> AgentState:
     """
-    Reads the supervisor's decision and routes to the next node.
+    Run profiler and strategist concurrently without LangGraph ParallelNode.
+    Merge their outputs deterministically.
     """
-    return state.next_step or END
+    # Create shallow copies to avoid concurrent mutation of logs
+    base_logs = list(_state_get(state, "logs", []))
+    state_prof = _state_to_namespace(state)
+    state_strat = _state_to_namespace(state)
+    state_prof.logs = list(base_logs)
+    state_strat.logs = list(base_logs)
+
+    prof_res, strat_res = await asyncio.gather(
+        profiler_node(state_prof),
+        strategist_node(state_strat)
+    )
+
+    merged_logs = list(dict.fromkeys((prof_res.get("logs", []) + strat_res.get("logs", []))))
+
+    return {
+        "psych": prof_res.get("psych"),
+        "strategy": strat_res.get("strategy"),
+        "logs": merged_logs
+    }
+
 
 @lru_cache(maxsize=1)
 def create_agent_graph():
-    """
-    Builds the Hierarchical Supervisor-Worker Graph (Hive Mind).
-    """
-    logger.info("Initializing Hive Mind Agent Graph...")
+    logger.info("Initializing Hive Mind Agent Graph (parallel analysis)...")
     workflow = StateGraph(AgentState)
-    
-    # --- Add Nodes ---
+
     workflow.add_node("supervisor", supervisor_node)
     workflow.add_node("hunter", hunter_node)
     workflow.add_node("profiler", profiler_node)
     workflow.add_node("strategist", strategist_node)
+    workflow.add_node("parallel_analysis", parallel_analysis_node)
     workflow.add_node("scribe", scribe_node)
     workflow.add_node("critic", critic_node)
-    
-    # --- Define Flow ---
-    # 1. Start at Supervisor
+
     workflow.set_entry_point("supervisor")
-    
-    # 2. Supervisor decides where to go
+
     workflow.add_conditional_edges(
         "supervisor",
         route_supervisor,
@@ -51,36 +90,40 @@ def create_agent_graph():
             "hunter": "hunter",
             "profiler": "profiler",
             "strategist": "strategist",
+            "parallel_analysis": "parallel_analysis",
             "scribe": "scribe",
             "critic": "critic",
             "end": END
         }
     )
-    
-    # 3. All workers report back to Supervisor
-    workflow.add_edge("hunter", "supervisor")
+
+    workflow.add_conditional_edges(
+        "hunter",
+        lambda state: "parallel_analysis" if _state_get(state, "prospect") else "supervisor",
+        {
+            "parallel_analysis": "parallel_analysis",
+            "supervisor": "supervisor"
+        }
+    )
+
+    workflow.add_edge("parallel_analysis", "supervisor")
     workflow.add_edge("profiler", "supervisor")
     workflow.add_edge("strategist", "supervisor")
     workflow.add_edge("scribe", "supervisor")
     workflow.add_edge("critic", "supervisor")
-    
+
     return workflow.compile()
 
-# --- Entry Points for Server Compatibility ---
 
 @traceable(name="Run Agent (Batch)")
 async def run_agent(
-    target_url: str = None, # Made Optional
+    target_url: str = None,
     user_instruction: str = "Introduce yourself",
     conversation_history: List[Dict[str, str]] = None,
     **kwargs
 ) -> Dict[str, Any]:
-    """
-    Main entry point for batch execution.
-    user_instruction replaces 'message' or 'user_offer'.
-    """
     graph = create_agent_graph()
-    
+
     initial_state = {
         "target_url": target_url,
         "user_instruction": user_instruction,
@@ -89,9 +132,10 @@ async def run_agent(
         "logs": [],
         "conversation_history": conversation_history or []
     }
-    
+
     result = await graph.ainvoke(initial_state)
     return result
+
 
 @traceable(name="Stream Agent")
 async def stream_agent(
@@ -100,12 +144,8 @@ async def stream_agent(
     conversation_history: List[Dict[str, str]] = None,
     **kwargs
 ) -> AsyncGenerator[Dict[str, Any], None]:
-    """
-    Streams the agent's progress updates.
-    Yields the updated state after each node completes.
-    """
     graph = create_agent_graph()
-    
+
     initial_state = {
         "target_url": target_url,
         "user_instruction": user_instruction,
@@ -114,30 +154,24 @@ async def stream_agent(
         "logs": [],
         "conversation_history": conversation_history or []
     }
-    
-    # Stream the graph state
+
     async for event in graph.astream(initial_state):
-        # Event is a dict like {'hunter': {state...}}
         node_name = list(event.keys())[0]
         try:
             state_update = event[node_name]
         except KeyError:
-             # handle complex graph events if needed
-             continue
-        
-        # We can yield a format that your frontend expects
-        # Here we yield the full state, but you can filter
-        
-        # Helper to get latest draft as string if needed
-        drafts = state_update.get("drafts", {})
-        latest_draft_text = "\n\n".join([f"== {k} ==\n{v}" for k,v in drafts.items()]) if drafts else None
-        
+            continue
+
+        drafts = _state_get(state_update, "drafts", {}) or {}
+        latest_draft_text = "\n\n".join([f"== {k} ==\n{v}" for k, v in drafts.items()]) if drafts else None
+
         yield {
             "node": node_name,
-            "logs": state_update.get("logs", []),
+            "logs": _state_get(state_update, "logs", []),
             "current_draft": latest_draft_text,
-            "final_output": state_update.get("final_output") # This is now a Dict
+            "final_output": _state_get(state_update, "final_output")
         }
+
 
 async def stream_agent_events(
     target_url: str,
@@ -145,11 +179,8 @@ async def stream_agent_events(
     conversation_history: List[Dict[str, str]] = None,
     **kwargs
 ) -> AsyncGenerator[Any, None]:
-    """
-    Granular streaming of events (LLM tokens, tool calls).
-    """
     graph = create_agent_graph()
-    
+
     initial_state = {
         "target_url": target_url,
         "user_instruction": user_instruction,
@@ -158,6 +189,6 @@ async def stream_agent_events(
         "logs": [],
         "conversation_history": conversation_history or []
     }
-    
+
     async for event in graph.astream_events(initial_state, version="v2"):
         yield event

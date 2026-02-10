@@ -6,10 +6,25 @@ from typing import AsyncGenerator
 from loguru import logger
 
 from .schemas import AgentStreamChunk
-
-
-
 from ml.settings import settings
+
+
+def _format_multi_channel_output(drafts: dict) -> str:
+    """Format multi-channel drafts into a single Markdown string."""
+    if not drafts:
+        return ""
+    parts = []
+    for channel, content in drafts.items():
+        title = channel.replace("_", " ").title()
+        parts.append(f"## {title}\n{content}")
+    return "\n\n".join(parts).strip()
+
+
+def _state_get(state, key, default=None):
+    if isinstance(state, dict):
+        return state.get(key, default)
+    return getattr(state, key, default)
+
 
 async def stream_agent_response(
     message: str,
@@ -19,52 +34,52 @@ async def stream_agent_response(
 ) -> AsyncGenerator[str, None]:
     """
     Stream agent responses as Server-Sent Events.
-    
-    This function provides efficient streaming of agent execution,
-    including thoughts, tool calls, and final responses.
-    
-    Args:
-        message: User's message
-        model: Ollama model name
-        conversation_history: Previous messages
-        max_iterations: Maximum iterations
-        
-    Yields:
-        SSE-formatted JSON chunks
     """
     try:
         logger.info(f"Starting agent stream for message: {message[:50]}...")
-        
-        # We now use the simplified stream_agent from graph.py
-        # which yields dicts like {'node': 'hunter', 'logs': [...], 'current_draft': ...}
+
         from .graph import stream_agent
-        
-        # Extract target_url and user_instruction from message (simple parsing for now)
-        # Assuming message format: "Analyze [URL] for [INSTRUCTION]" or just the URL
-        # Extract target_url and user_instruction
+
         import re
         url_pattern = r'https?://[^\s]+'
         urls = re.findall(url_pattern, message)
-        
+
         if urls:
             target_url = urls[0]
             user_instruction = message.replace(target_url, "").strip() or "Analyze this"
         else:
             target_url = None
             user_instruction = message
-        
+
         iteration_count = 0
         sent_log_count = 0
-        
-        # Call stream_agent with new signature: (user_instruction, target_url)
-        async for state_update in stream_agent(user_instruction=user_instruction, target_url=target_url):
-            node_name = state_update.get("node")
-            logs = state_update.get("logs", [])
-            final_output = state_update.get("final_output")
-            
+        last_draft_keys = set()
+        last_phase = None
+        final_sent = False
+        seen_prospect = False
+        seen_psych = False
+        seen_strategy = False
+        seen_critique = False
+
+        async for state_update in stream_agent(
+            user_instruction=user_instruction,
+            target_url=target_url,
+            conversation_history=conversation_history
+        ):
+            node_name = _state_get(state_update, "node")
+            logs = _state_get(state_update, "logs", [])
+            final_output = _state_get(state_update, "final_output")
+
             iteration_count += 1
-            
-            # Send all new logs as "thoughts"
+
+            if node_name and node_name != last_phase:
+                phase_chunk = AgentStreamChunk(
+                    type="thought",
+                    content=f"[PHASE] {node_name.upper()} complete"
+                )
+                yield f"data: {phase_chunk.model_dump_json()}\n\n"
+                last_phase = node_name
+
             if logs:
                 current_log_count = len(logs)
                 if current_log_count > sent_log_count:
@@ -75,25 +90,100 @@ async def stream_agent_response(
                             content=f"[{node_name.upper()}] {log_entry}" if not log_entry.startswith("[") else log_entry
                         )
                         yield f"data: {chunk.model_dump_json()}\n\n"
-                    
+
                     sent_log_count = current_log_count
-            
-            # If we have a final output, send it as the response
-            if final_output:
-                content_str = json.dumps(final_output) if isinstance(final_output, (dict, list)) else str(final_output)
+
+            prospect = _state_get(state_update, "prospect")
+            if prospect and not seen_prospect:
+                if isinstance(prospect, dict):
+                    name = prospect.get("name", "Prospect")
+                    role = prospect.get("role", "Role")
+                    company = prospect.get("company", "Company")
+                else:
+                    name = getattr(prospect, "name", "Prospect")
+                    role = getattr(prospect, "role", "Role")
+                    company = getattr(prospect, "company", "Company")
                 chunk = AgentStreamChunk(
-                    type="response",
-                    content=content_str
+                    type="thought",
+                    content=f"[MILESTONE] Persona extracted: {name} | {role} @ {company}"
                 )
                 yield f"data: {chunk.model_dump_json()}\n\n"
-                
-                # Send done signal
+                seen_prospect = True
+
+            psych = _state_get(state_update, "psych")
+            if psych and not seen_psych:
+                if isinstance(psych, dict):
+                    style = psych.get("communication_style", "Unknown")
+                    disc = psych.get("disc_type", "Unknown")
+                else:
+                    style = getattr(psych, "communication_style", "Unknown")
+                    disc = getattr(psych, "disc_type", "Unknown")
+                chunk = AgentStreamChunk(
+                    type="thought",
+                    content=f"[MILESTONE] Tone inferred: {style} (DISC {disc})"
+                )
+                yield f"data: {chunk.model_dump_json()}\n\n"
+                seen_psych = True
+
+            strategy = _state_get(state_update, "strategy")
+            if strategy and not seen_strategy:
+                if isinstance(strategy, dict):
+                    channels = strategy.get("target_channels", []) or []
+                    goal = strategy.get("goal", "")
+                else:
+                    channels = getattr(strategy, "target_channels", None) or []
+                    goal = getattr(strategy, "goal", "")
+                chunk = AgentStreamChunk(
+                    type="thought",
+                    content=f"[MILESTONE] Strategy ready: {', '.join(channels)} | Goal: {goal}"
+                )
+                yield f"data: {chunk.model_dump_json()}\n\n"
+                seen_strategy = True
+
+            drafts = _state_get(state_update, "drafts", {}) or {}
+            if drafts:
+                new_keys = set(drafts.keys()) - last_draft_keys
+                for ch in sorted(new_keys):
+                    chunk = AgentStreamChunk(
+                        type="thought",
+                        content=f"[MILESTONE] Draft generated: {ch}"
+                    )
+                    yield f"data: {chunk.model_dump_json()}\n\n"
+                last_draft_keys = set(drafts.keys())
+
+            critique = _state_get(state_update, "latest_critique")
+            if critique and not seen_critique:
+                if isinstance(critique, dict):
+                    score = critique.get("score", None)
+                    feedback = critique.get("feedback", "")
+                else:
+                    score = getattr(critique, "score", None)
+                    feedback = getattr(critique, "feedback", "")
+                chunk = AgentStreamChunk(
+                    type="thought",
+                    content=f"[MILESTONE] Critique: {score}/10 | {feedback}"
+                )
+                yield f"data: {chunk.model_dump_json()}\n\n"
+                seen_critique = True
+
+            if final_output and not final_sent:
+                if isinstance(final_output, dict):
+                    final_text = _format_multi_channel_output(final_output)
+                else:
+                    final_text = str(final_output)
+                chunk = AgentStreamChunk(
+                    type="response",
+                    content=final_text
+                )
+                yield f"data: {chunk.model_dump_json()}\n\n"
+
                 done_chunk = AgentStreamChunk(
                     type="done",
-                    content=content_str,
+                    content=final_text,
                     metadata={"iterations": iteration_count}
                 )
                 yield f"data: {done_chunk.model_dump_json()}\n\n"
+                final_sent = True
                 break
 
     except Exception as e:
@@ -108,17 +198,11 @@ async def stream_agent_response(
 def format_final_response(events: list) -> dict:
     """
     Extract and format the final response from agent events.
-    
-    Args:
-        events: List of agent events
-        
-    Returns:
-        Formatted response dictionary
     """
     final_response = ""
     tool_calls = []
     iterations = 0
-    
+
     for event in events:
         if "agent" in event:
             messages = event["agent"].get("messages", [])
@@ -126,16 +210,16 @@ def format_final_response(events: list) -> dict:
                 last_message = messages[-1]
                 if hasattr(last_message, "content") and last_message.content:
                     final_response = last_message.content
-                
+
                 if hasattr(last_message, "tool_calls") and last_message.tool_calls:
                     for tc in last_message.tool_calls:
                         tool_calls.append({
                             "name": tc.get("name"),
                             "input": tc.get("args")
                         })
-            
+
             iterations = event["agent"].get("iterations", iterations)
-    
+
     return {
         "response": final_response,
         "tool_calls": tool_calls,
