@@ -21,7 +21,7 @@ app.add_middleware(
 
 class AgentRequest(BaseModel):
     message: str
-    model: str = "qwen2.5:3b-instruct"
+    model: str = "qwen2.5:7b"
     max_iterations: int = 10
     conversation_history: list = None
 

@@ -134,7 +134,7 @@ export default function OutreachChat() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "qwen2.5:3b-instruct",
+          model: "qwen2.5:7b",
           message: originalInput,
           conversation_history: messages.map(m => ({
             role: m.role,

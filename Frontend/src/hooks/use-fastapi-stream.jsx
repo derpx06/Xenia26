@@ -156,7 +156,7 @@ export function useFastAPIStream({
                 },
                 body: JSON.stringify({
                     message: userMessage,
-                    model: "qwen2.5:3b-instruct",
+                    model: "qwen2.5:7b",
                     conversation_history: history,
                     max_iterations: 10
                 }),

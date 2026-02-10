@@ -27,7 +27,7 @@ def get_llm(provider: str, model: str | None = None, temperature: float = 0.7):
             "openai": "gpt-3.5-turbo",
             "anthropic": "claude-3-haiku-20240307",
             "google_genai": "gemini-1.5-flash",
-            "ollama": "qwen2.5:3b-instruct",
+            "ollama": "qwen2.5:7b",
         }
         model = default_models.get(provider)
 
@@ -53,7 +53,7 @@ def get_instructor_client(provider: str, model: str | None = None, temperature: 
     # Set default models
     if model is None:
         default_models = {
-            "ollama": "qwen2.5:3b-instruct",
+            "ollama": "qwen2.5:7b",
         }
         model = default_models.get(provider)
         

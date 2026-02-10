@@ -5,7 +5,7 @@ from langchain_ollama import ChatOllama
 from langchain_core.tools import tool
 
 # Mock settings
-os.environ["LLM_MODEL"] = "qwen2.5:3b-instruct"
+os.environ["LLM_MODEL"] = "qwen2.5:7b"
 
 @tool
 def add(a: int, b: int) -> int:
@@ -15,7 +15,7 @@ def add(a: int, b: int) -> int:
 async def main():
     print("Testing Qwen2.5 Tool Calling...")
     
-    llm = ChatOllama(model="qwen2.5:3b-instruct", temperature=0)
+    llm = ChatOllama(model="qwen2.5:7b", temperature=0)
     tools = [add]
     llm_with_tools = llm.bind_tools(tools)
     

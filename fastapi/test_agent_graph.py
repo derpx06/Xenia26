@@ -4,12 +4,12 @@ from ml.application.agent.graph import create_agent_graph
 from langchain_core.messages import HumanMessage
 
 # Mock settings
-os.environ["LLM_MODEL"] = "qwen2.5:3b-instruct"
+os.environ["LLM_MODEL"] = "qwen2.5:7b"
 
 async def main():
     print("Testing Agent Graph Tool Calling...")
     
-    graph = create_agent_graph(model_name="qwen2.5:3b-instruct")
+    graph = create_agent_graph(model_name="qwen2.5:7b")
     
     query = "Search for Xenia"
     messages = [HumanMessage(content=query)]

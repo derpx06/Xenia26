@@ -2,13 +2,11 @@
 Efficient streaming implementation for agent responses.
 """
 import json
+import re
 from typing import AsyncGenerator
 from loguru import logger
 
 from .schemas import AgentStreamChunk
-
-
-
 from ml.settings import settings
 
 async def stream_agent_response(
@@ -19,30 +17,14 @@ async def stream_agent_response(
 ) -> AsyncGenerator[str, None]:
     """
     Stream agent responses as Server-Sent Events.
-    
-    This function provides efficient streaming of agent execution,
-    including thoughts, tool calls, and final responses.
-    
-    Args:
-        message: User's message
-        model: Ollama model name
-        conversation_history: Previous messages
-        max_iterations: Maximum iterations
-        
-    Yields:
-        SSE-formatted JSON chunks
     """
     try:
         logger.info(f"Starting agent stream for message: {message[:50]}...")
         
         # We now use the simplified stream_agent from graph.py
-        # which yields dicts like {'node': 'hunter', 'logs': [...], 'current_draft': ...}
         from .graph import stream_agent
         
-        # Extract target_url and user_instruction from message (simple parsing for now)
-        # Assuming message format: "Analyze [URL] for [INSTRUCTION]" or just the URL
         # Extract target_url and user_instruction
-        import re
         url_pattern = r'https?://[^\s]+'
         urls = re.findall(url_pattern, message)
         
@@ -70,9 +52,11 @@ async def stream_agent_response(
                 if current_log_count > sent_log_count:
                     new_logs = logs[sent_log_count:]
                     for log_entry in new_logs:
+                        # Ensure log is a string
+                        log_str = str(log_entry)
                         chunk = AgentStreamChunk(
                             type="thought",
-                            content=f"[{node_name.upper()}] {log_entry}" if not log_entry.startswith("[") else log_entry
+                            content=f"[{node_name.upper()}] {log_str}" if not log_str.startswith("[") else log_str
                         )
                         yield f"data: {chunk.model_dump_json()}\n\n"
                     
@@ -80,39 +64,55 @@ async def stream_agent_response(
             
             # If we have a final output, send it as the response
             if final_output:
+                # --- FIX 1: UNWRAP DICTIONARY TO STRING ---
+                content_to_send = final_output
+                if isinstance(final_output, dict):
+                    content_to_send = (
+                        final_output.get("email") or 
+                        final_output.get("content") or 
+                        final_output.get("response") or 
+                        final_output.get("general_response") or
+                        str(final_output)
+                    )
+                else:
+                    content_to_send = str(final_output)
+                # ------------------------------------------
+
                 chunk = AgentStreamChunk(
                     type="response",
-                    content=final_output
+                    content=content_to_send
                 )
                 yield f"data: {chunk.model_dump_json()}\n\n"
                 
                 # Send done signal
                 done_chunk = AgentStreamChunk(
                     type="done",
-                    content=final_output,
+                    content="Done",
                     metadata={"iterations": iteration_count}
                 )
                 yield f"data: {done_chunk.model_dump_json()}\n\n"
                 break
 
     except Exception as e:
-        logger.error(f"Error during agent streaming: {e}", exc_info=True)
-        error_chunk = AgentStreamChunk(
-            type="error",
-            content=f"Error: {str(e)}"
-        )
-        yield f"data: {error_chunk.model_dump_json()}\n\n"
+        # --- FIX 2: SAFE LOGGING (PREVENTS CRASH) ---
+        import json
+        
+        # Log without f-string formatting on the exception object to avoid KeyError
+        logger.error("Error during agent streaming: {err}", err=str(e))
+        
+        error_content = str(e)
+        if isinstance(e, dict):
+            error_content = json.dumps(e)
+        elif hasattr(e, 'message'): 
+            error_content = e.message
+            
+        yield f"data: {json.dumps({'type': 'error', 'content': error_content})}\n\n"
+        # --------------------------------------------
 
 
 def format_final_response(events: list) -> dict:
     """
     Extract and format the final response from agent events.
-    
-    Args:
-        events: List of agent events
-        
-    Returns:
-        Formatted response dictionary
     """
     final_response = ""
     tool_calls = []
