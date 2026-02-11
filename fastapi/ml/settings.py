@@ -17,6 +17,8 @@ class Settings:
     def __init__(self):
         # Model settings
         self.LLM_MODEL = os.getenv("LLM_MODEL", "qwen2.5:7b")
+        self.LLM_LOGIC_MODEL = os.getenv("LLM_LOGIC_MODEL", self.LLM_MODEL)
+        self.LLM_CREATIVE_MODEL = os.getenv("LLM_CREATIVE_MODEL", self.LLM_MODEL)
         self.model_name = os.getenv("MODEL_NAME", "qwen2.5:7b")
         self.embedding_model = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
         self.TEXT_EMBEDDING_MODEL_ID = os.getenv("TEXT_EMBEDDING_MODEL_ID", "sentence-transformers/all-MiniLM-L6-v2")
