@@ -62,6 +62,9 @@ async def stream_agent_response(
         seen_psych = False
         seen_strategy = False
         seen_critique = False
+        seen_intent = False
+        seen_topic_lock = False
+        seen_search_decision = False
 
         async for state_update in stream_agent(
             user_instruction=user_instruction,
@@ -81,6 +84,37 @@ async def stream_agent_response(
                 )
                 yield f"data: {phase_chunk.model_dump_json()}\n\n"
                 last_phase = node_name
+
+            # --- NEW: Structured phase events for intent router ---
+            intent_category = _state_get(state_update, "intent_category")
+            if intent_category and not seen_intent:
+                phase_chunk = AgentStreamChunk(
+                    type="phase",
+                    content="intent_classified",
+                    metadata={"category": intent_category}
+                )
+                yield f"data: {phase_chunk.model_dump_json()}\n\n"
+                seen_intent = True
+
+            topic_lock = _state_get(state_update, "topic_lock")
+            if topic_lock and not seen_topic_lock:
+                phase_chunk = AgentStreamChunk(
+                    type="phase",
+                    content="topic_locked",
+                    metadata={"topic": topic_lock}
+                )
+                yield f"data: {phase_chunk.model_dump_json()}\n\n"
+                seen_topic_lock = True
+
+            needs_search = _state_get(state_update, "needs_search")
+            if needs_search is not None and not seen_search_decision:
+                phase_chunk = AgentStreamChunk(
+                    type="phase",
+                    content="search_decision",
+                    metadata={"needs_search": needs_search}
+                )
+                yield f"data: {phase_chunk.model_dump_json()}\n\n"
+                seen_search_decision = True
 
             if logs:
                 current_log_count = len(logs)

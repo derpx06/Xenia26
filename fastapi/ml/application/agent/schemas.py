@@ -22,6 +22,7 @@ class ProspectProfile(BaseModel):
     primary_language: Optional[str] = Field(default=None)
     summary: Optional[str] = Field(default=None)
     source_urls: List[str] = Field(default_factory=list)
+    is_placeholder: bool = Field(default=False)
     
 class PsychProfile(BaseModel):
     disc_type: Literal["D", "I", "S", "C"]
@@ -29,6 +30,11 @@ class PsychProfile(BaseModel):
     tone_instructions: List[str]
     # New: Captured style rules from writing_style_inferrer
     style_rules: List[str] = Field(default_factory=list)
+    
+    # New: Detailed style signals for mirroring
+    avg_sentence_len: Optional[int] = None
+    emoji_usage: Optional[str] = None 
+    vocabulary_complexity: Optional[str] = None
 
 class StrategyBrief(BaseModel):
     """The Master Plan - Now Channel Aware"""
@@ -60,10 +66,18 @@ class AgentState(BaseModel):
     # Drafting
     drafts: Dict[str, str] = Field(default_factory=dict) # Keyed by channel
     latest_critique: Optional[CritiqueResult] = None
+    channel_critiques: Dict[str, CritiqueResult] = Field(default_factory=dict) # NEW: Per-channel critiques
     revision_count: int = 0
     
     # Hive Mind Routing
     next_step: Optional[Literal["hunter", "profiler", "strategist", "scribe", "critic", "end"]] = None
+    
+    # Intent Router (NEW)
+    intent_category: Optional[str] = None  # small_talk | system_question | outreach_task | research_outreach_task
+    topic_lock: Optional[str] = None       # Extracted primary topic (1 sentence)
+    search_keywords: List[str] = Field(default_factory=list)  # Domain-only keywords for search
+    needs_search: bool = True              # Whether search was determined necessary
+    direct_response: Optional[str] = None  # For small_talk/system_question bypass
     
     # Final Output
     final_output: Optional[Dict[str, str]] = None # Keyed by channel
@@ -105,7 +119,7 @@ class AgentRequest(BaseModel):
 
 class AgentStreamChunk(BaseModel):
     """Streaming chunk from agent."""
-    type: Literal["thought", "tool_call", "tool_result", "response", "error", "done"]
+    type: Literal["thought", "tool_call", "tool_result", "response", "error", "done", "phase"]
     content: str = ""
     tool_name: Optional[str] = None
     tool_input: Optional[Dict[str, Any]] = None

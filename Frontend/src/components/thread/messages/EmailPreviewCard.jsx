@@ -11,9 +11,13 @@ export function EmailPreviewCard({ content, onSend, onCancel, defaultTo = "", pr
     // Sync state with content prop (for streaming)
     React.useEffect(() => {
         if (content) {
-            const match = content.match(/Subject:\s*[:]*\s*(.+)/i);
-            const newSubject = match ? match[1].trim() : "Quick Question";
-            const newBody = content.replace(/Subject:.*\n*/i, '').trim();
+            const match = content.match(/Subject:\s*(.+)/i);
+            const newSubject = match ? match[1].trim() : "No Subject";
+
+            // Remove subject line and optional Body: label
+            let newBody = content.replace(/Subject:.*(\n|$)/i, '').trim();
+            newBody = newBody.replace(/^Body:\s*/i, '').trim();
+            newBody = newBody.replace(/^---\s*/, "").trim(); // Legacy cleanup
 
             setSubject(newSubject);
             setBody(newBody);

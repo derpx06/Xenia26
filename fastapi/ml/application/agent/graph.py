@@ -1,6 +1,7 @@
 """
 Agent graph implementation using LangGraph.
 Implements the 'Deep-Psych' Superior Agent Pattern with parallel analysis.
+Now with Intent Router as pre-Supervisor gate.
 """
 import asyncio
 from typing import Dict, Any, AsyncGenerator, List
@@ -16,6 +17,7 @@ from .nodes import (
     scribe_node, critic_node
 )
 from .supervisor import supervisor_node
+from .intent_router import intent_router_node
 
 
 def _state_get(state: AgentState, key: str, default=None):
@@ -36,6 +38,23 @@ def _state_to_dict(state: AgentState) -> Dict[str, Any]:
 
 def _state_to_namespace(state: AgentState) -> SimpleNamespace:
     return SimpleNamespace(**_state_to_dict(state))
+
+
+def route_intent(state: AgentState) -> str:
+    """Route based on intent classification."""
+    category = _state_get(state, "intent_category")
+    if category in ("small_talk", "system_question"):
+        return "direct_response"
+    return "supervisor"
+
+
+def direct_response_node(state: AgentState) -> dict:
+    """Package a direct response for pipeline-bypass cases."""
+    resp = _state_get(state, "direct_response") or "Hey! What can I help you with?"
+    return {
+        "final_output": {"general_response": resp},
+        "logs": _state_get(state, "logs", []) + ["[DIRECT] Bypassed pipeline — direct response sent"],
+    }
 
 
 def route_supervisor(state: AgentState) -> str:
@@ -70,9 +89,14 @@ async def parallel_analysis_node(state: AgentState) -> AgentState:
 
 @lru_cache(maxsize=1)
 def create_agent_graph():
-    logger.info("Initializing Hive Mind Agent Graph (parallel analysis)...")
+    logger.info("Initializing Hive Mind Agent Graph (intent router + parallel analysis)...")
     workflow = StateGraph(AgentState)
 
+    # --- Intent Router (NEW: first node) ---
+    workflow.add_node("intent_router", intent_router_node)
+    workflow.add_node("direct_response", direct_response_node)
+
+    # --- Existing nodes ---
     workflow.add_node("supervisor", supervisor_node)
     workflow.add_node("hunter", hunter_node)
     workflow.add_node("profiler", profiler_node)
@@ -81,8 +105,21 @@ def create_agent_graph():
     workflow.add_node("scribe", scribe_node)
     workflow.add_node("critic", critic_node)
 
-    workflow.set_entry_point("supervisor")
+    # Entry point is now intent_router, NOT supervisor
+    workflow.set_entry_point("intent_router")
 
+    # Intent router routes to direct_response or supervisor
+    workflow.add_conditional_edges(
+        "intent_router",
+        route_intent,
+        {
+            "direct_response": "direct_response",
+            "supervisor": "supervisor",
+        }
+    )
+    workflow.add_edge("direct_response", END)
+
+    # Supervisor routes to worker nodes
     workflow.add_conditional_edges(
         "supervisor",
         route_supervisor,
@@ -169,7 +206,16 @@ async def stream_agent(
             "node": node_name,
             "logs": _state_get(state_update, "logs", []),
             "current_draft": latest_draft_text,
-            "final_output": _state_get(state_update, "final_output")
+            "final_output": _state_get(state_update, "final_output"),
+            # NEW: Intent router state for structured streaming
+            "intent_category": _state_get(state_update, "intent_category"),
+            "topic_lock": _state_get(state_update, "topic_lock"),
+            "needs_search": _state_get(state_update, "needs_search"),
+            "direct_response": _state_get(state_update, "direct_response"),
+            "prospect": _state_get(state_update, "prospect"),
+            "psych": _state_get(state_update, "psych"),
+            "strategy": _state_get(state_update, "strategy"),
+            "latest_critique": _state_get(state_update, "latest_critique"),
         }
 
 

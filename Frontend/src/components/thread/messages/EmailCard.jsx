@@ -19,9 +19,12 @@ export function EmailCard({ content }) {
             endIndex === -1 ? content.length : endIndex
         ).trim();
 
-        const [subjectLine, ...bodyLines] = draftContent.split("\n");
-        const subject = subjectLine.replace(/^Subject:\s*/i, "").trim();
-        const body = bodyLines.join("\n").replace(/^---\s*/, "").trim();
+        const match = draftContent.match(/Subject:\s*(.+)/i);
+        const subject = match ? match[1].trim() : "No Subject";
+
+        let body = draftContent.replace(/Subject:.*(\n|$)/i, '').trim();
+        body = body.replace(/^Body:\s*/i, '').trim();
+        body = body.replace(/^---\s*/, "").trim(); // Legacy cleanup
 
         return { subject, body };
     }, [content]);

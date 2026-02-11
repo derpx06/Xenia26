@@ -1,6 +1,7 @@
 import hashlib
 import re
 import time
+import json
 from typing import Optional, Any, List, Dict
 
 import instructor
@@ -105,6 +106,15 @@ def infer_channels_from_instruction(instruction: str) -> List[str]:
         channels.append("instagram_dm")
     if "twitter" in instruction_lc or "x thread" in instruction_lc:
         channels.append("twitter_thread")
+    
+    # Generic outreach intent? Suggest email + linkedin_dm + whatsapp as smart defaults
+    # Broadened scope: any "write/draft" intent should trigger at least email/linkedin/whatsapp
+    if not channels and any(k in instruction_lc for k in [
+        "reach out", "contact", "message", "write", "draft", "create", 
+        "generate", "compose", "send", "outreach"
+    ]):
+        channels.extend(["email", "whatsapp"])
+
     return list(dict.fromkeys(channels))
 
 
@@ -350,6 +360,35 @@ def ensure_critique(value: Any) -> CritiqueResult:
 
 
 def parse_multi_channel(text: str, channels: List[str]) -> Dict[str, str]:
+    if not text:
+        return {}
+
+    # Task 9: Try JSON parsing first for strict output
+    try:
+        clean_text = text.replace("```json", "").replace("```", "").strip()
+        data = json.loads(clean_text)
+        if isinstance(data, dict):
+            # Normalize keys to match channels (e.g. "email" -> "email")
+            # Filter solely for requested channels to avoid noise
+            results = {}
+            for ch in channels:
+                if ch in data:
+                    val = data[ch]
+                    # Handle nested dict output (LLM deviation)
+                    if isinstance(val, dict):
+                        subject = val.get("subject", "") or val.get("Subject", "")
+                        body = val.get("body", "") or val.get("Body", "") or val.get("message", "")
+                        if subject:
+                            results[ch] = f"Subject: {subject}\n\n{body}"
+                        else:
+                            results[ch] = str(body) if body else str(val)
+                    else:
+                        results[ch] = str(val).strip()
+            return results
+    except json.JSONDecodeError:
+        pass
+
+    # Fallback to Regex Parsing (Legacy)
     results = {}
     for ch in channels:
         pattern = rf"===CHANNEL:\s*{re.escape(ch)}===\s*(.*?)(?:(?:\n===CHANNEL:)|\Z)"

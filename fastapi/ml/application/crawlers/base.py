@@ -11,7 +11,10 @@ from ml.domain.documents import NoSQLBaseDocument
 # Check if the current version of chromedriver exists
 # and if it doesn't exist, download it automatically,
 # then add chromedriver to path
-chromedriver_autoinstaller.install()
+try:
+    chromedriver_autoinstaller.install()
+except Exception as e:
+    print(f"Warning: Failed to install chromedriver: {e}")
 
 
 class BaseCrawler(ABC):

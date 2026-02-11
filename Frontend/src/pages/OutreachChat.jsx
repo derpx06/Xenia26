@@ -275,7 +275,22 @@ export default function OutreachChat() {
                   setIsStreaming(false);
                   setStreamingContent("");
                   setAgentStatus("Complete");
-                  const parsed = parseMultiChannelMarkdown(msg.content);
+
+                  // Task 9 Support: Attempt JSON parse first
+                  let parsed = null;
+                  try {
+                    // Clean potential markdown blocks if LLM wraps JSON
+                    const cleanContent = msg.content.replace(/```json/g, "").replace(/```/g, "").trim();
+                    const json = JSON.parse(cleanContent);
+                    // Validate structure (must contain channel keys)
+                    if (json && (json.email || json.linkedin_dm || json.whatsapp || json.sms)) {
+                      parsed = json;
+                    }
+                  } catch (e) {
+                    // Fallback to markdown parsing
+                    parsed = parseMultiChannelMarkdown(msg.content);
+                  }
+
                   if (parsed) {
                     msg.generated_content = {
                       email: parsed.email,
