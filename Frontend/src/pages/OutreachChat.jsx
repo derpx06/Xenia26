@@ -146,7 +146,7 @@ export default function OutreachChat() {
       content: "",
       tool_calls: [],
       tool_results: [],
-      thoughts: []
+      thoughts: ["[SYSTEM] Initializing SARGE core..."]
     };
 
     setMessages(prev => [...prev, initialAssistantMsg]);
@@ -373,7 +373,8 @@ export default function OutreachChat() {
 
                     {/* PROCESS BOX (Agent Journey) */}
                     {msg.role === 'assistant' && (
-                      (msg.tool_calls?.length > 0 || msg.tool_results?.length > 0 || msg.thoughts?.length > 0) && (
+                      ((isStreaming && i === messages.length - 1) ||
+                        (msg.tool_calls?.length > 0 || msg.tool_results?.length > 0 || msg.thoughts?.length > 0 || msg.active_node)) && (
                         <div className="mb-4 w-full max-w-2xl flex flex-col gap-0 bg-[#0F0F0F] border border-white/5 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 backdrop-blur-md">
 
                           {/* 1. HEADER & PROGRESS STEPS */}
@@ -392,7 +393,10 @@ export default function OutreachChat() {
                             <div className="flex justify-between items-center px-1">
                               {['ROUTER', 'PROFILER', 'RETRIEVER', 'WRITER', 'CRITIC'].map((step, idx) => {
                                 // Check if this step is active or done based on thoughts or state
-                                const isStepActive = msg.active_node === step || msg.thoughts?.some(t => t.toUpperCase().includes(`[${step}]`));
+                                const isCurrentMsg = i === messages.length - 1;
+                                const isStepActive = msg.active_node === step ||
+                                  (idx === 0 && isStreaming && isCurrentMsg && !msg.active_node) ||
+                                  msg.thoughts?.some(t => t.toUpperCase().includes(`[${step}]`));
                                 return (
                                   <div key={step} className="flex flex-col items-center gap-2 relative z-10 group">
                                     <div className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all duration-500 ${isStepActive
@@ -434,6 +438,8 @@ export default function OutreachChat() {
                                 if (node === 'CRITIC') colorClass = "text-red-400";
                                 if (node === 'STYLE_INFERRER') colorClass = "text-cyan-400";
                                 if (node === 'GENERATOR') colorClass = "text-emerald-400 italic";
+                                if (node === 'SYSTEM') colorClass = "text-zinc-500 italic";
+                                if (node === 'SARGE') colorClass = "text-orange-400 font-bold";
 
                                 return (
                                   <div key={tIdx} className="break-words leading-relaxed border-l-2 border-white/5 pl-2 hover:bg-white/5 transition-colors p-1 rounded-r-md">
@@ -462,6 +468,14 @@ export default function OutreachChat() {
                                   Done.
                                 </div>
                               ))}
+
+                              {/* Connection State */}
+                              {msg.thoughts?.length === 0 && isStreaming && i === messages.length - 1 && (
+                                <div className="text-zinc-500 animate-pulse flex items-center gap-2">
+                                  <span className="w-1 h-1 bg-zinc-500 rounded-full"></span>
+                                  Streaming from SARGE engine...
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -535,6 +549,42 @@ export default function OutreachChat() {
                             ) : null}
 
                             {/* MANUAL SEND FLOW (Fallback or Override) */}
+                            {activeSendFlow?.msgIndex === i && activeSendFlow.step === 'preview' && (
+                              <div className="w-full mt-4 animate-in slide-in-from-bottom-2 duration-300">
+                                {activeSendFlow.type === 'email' && (
+                                  <EmailPreviewCard
+                                    content={activeSendFlow.content}
+                                    previewMode={true}
+                                    onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
+                                    onCancel={() => setActiveSendFlow(null)}
+                                    // Audio props can be added here if manual flow supports audio generation
+                                    onConvertAudio={() => handleGenerateAudio(activeSendFlow.content)}
+                                    isAudioLoading={loadingAction}
+                                  />
+                                )}
+                                {activeSendFlow.type === 'linkedin' && (
+                                  <LinkedInPreviewCard
+                                    content={activeSendFlow.content}
+                                    previewMode={true}
+                                    onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
+                                    onCancel={() => setActiveSendFlow(null)}
+                                    onConvertAudio={() => handleGenerateAudio(activeSendFlow.content)}
+                                    isAudioLoading={loadingAction}
+                                  />
+                                )}
+                                {activeSendFlow.type === 'whatsapp' && (
+                                  <WhatsAppPreviewCard
+                                    content={activeSendFlow.content}
+                                    previewMode={true}
+                                    onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
+                                    onCancel={() => setActiveSendFlow(null)}
+                                    onConvertAudio={() => handleGenerateAudio(activeSendFlow.content)}
+                                    isAudioLoading={loadingAction}
+                                  />
+                                )}
+                              </div>
+                            )}
+
                             {activeSendFlow?.msgIndex === i && activeSendFlow.step === 'input' && (
                               <div className="p-4 border border-purple-500/30 bg-purple-900/10 rounded-xl mt-2">
                                 <ContactInputStep
@@ -542,6 +592,7 @@ export default function OutreachChat() {
                                   setActiveSendFlow={setActiveSendFlow}
                                   executeSend={(val) => executeSend(val, activeSendFlow.content, activeSendFlow.content)}
                                   loadingAction={loadingAction}
+                                  onCancel={() => setActiveSendFlow(null)}
                                 />
                               </div>
                             )}

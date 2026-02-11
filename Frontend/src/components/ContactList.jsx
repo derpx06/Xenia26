@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, MoreVertical, Phone, Mail, Linkedin, Trash2, Edit2, X, Loader2, User } from 'lucide-react';
+import { Plus, Search, MoreVertical, Phone, Mail, Linkedin, Trash2, Edit2, X, Loader2, User, Building, MapPin } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const BACKEND_URL = "http://localhost:8080/api";
 
@@ -105,7 +106,8 @@ export default function ContactList() {
         }
     };
 
-    const handleDelete = async (id) => {
+    const handleDelete = async (id, e) => {
+        e.stopPropagation(); // Prevent opening edit modal
         if (!window.confirm("Are you sure you want to delete this contact?")) return;
         try {
             await fetch(`${BACKEND_URL}/contacts/${id}`, { method: "DELETE" });
@@ -122,22 +124,22 @@ export default function ContactList() {
     );
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-6">
             {/* Header / Toolbar */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div className="relative flex-1 w-full sm:max-w-xs">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#0F0F0F] p-2 rounded-2xl border border-white/5 relative z-20">
+                <div className="relative flex-1 w-full sm:max-w-md group">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 group-focus-within:text-purple-400 transition-colors" />
                     <input
                         type="text"
-                        placeholder="Search contacts..."
+                        placeholder="Search contacts by name, company, or email..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full bg-[#0F0F0F] border border-white/5 rounded-xl pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-purple-500/50 transition-colors"
+                        className="w-full bg-transparent border-none rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:ring-0 placeholder-neutral-600"
                     />
                 </div>
                 <button
                     onClick={() => handleOpenModal()}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-xl transition-all shadow-lg shadow-purple-900/20"
+                    className="flex items-center gap-2 px-5 py-2.5 bg-white text-black text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-lg hover:shadow-white/20 hover:scale-105"
                 >
                     <Plus className="w-4 h-4" />
                     Add Contact
@@ -146,116 +148,189 @@ export default function ContactList() {
 
             {/* List */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {loading ? (
-                    <div className="col-span-full py-8 text-center text-neutral-500 flex justify-center">
-                        <Loader2 className="w-6 h-6 animate-spin" />
-                    </div>
-                ) : filteredContacts.length === 0 ? (
-                    <div className="col-span-full py-8 text-center text-neutral-500 bg-[#0F0F0F] rounded-2xl border border-dashed border-white/10">
-                        <User className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                        <p>No contacts found.</p>
-                    </div>
-                ) : (
-                    filteredContacts.map(contact => (
-                        <div key={contact._id} className="group bg-[#0A0A0A] border border-white/5 hover:border-white/10 rounded-2xl p-4 transition-all relative">
-                            <div className="flex justify-between items-start">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-900 to-slate-900 flex items-center justify-center text-sm font-bold text-white border border-white/10">
-                                        {contact.name.charAt(0).toUpperCase()}
-                                    </div>
-                                    <div>
-                                        <h4 className="font-bold text-white text-sm">{contact.name}</h4>
-                                        <p className="text-xs text-neutral-500">{contact.role} {contact.company && `at ${contact.company}`}</p>
-                                    </div>
-                                </div>
-                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button onClick={() => handleOpenModal(contact)} className="p-1.5 hover:bg-white/10 rounded-lg text-neutral-400 hover:text-white"><Edit2 className="w-3.5 h-3.5" /></button>
-                                    <button onClick={() => handleDelete(contact._id)} className="p-1.5 hover:bg-red-500/10 rounded-lg text-neutral-400 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
-                                </div>
+                <AnimatePresence mode='popLayout'>
+                    {loading ? (
+                        <div className="col-span-full py-12 flex justify-center">
+                            <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
+                        </div>
+                    ) : filteredContacts.length === 0 ? (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="col-span-full py-12 flex flex-col items-center justify-center text-center text-neutral-500 bg-[#0F0F0F] rounded-3xl border border-dashed border-white/10"
+                        >
+                            <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
+                                <User className="w-8 h-8 opacity-40" />
                             </div>
+                            <p className="text-lg font-medium text-white mb-1">No contacts found</p>
+                            <p className="text-sm">Try searching for something else or add a new contact.</p>
+                        </motion.div>
+                    ) : (
+                        filteredContacts.map((contact, i) => (
+                            <motion.div
+                                layout
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.9 }}
+                                transition={{ delay: i * 0.05 }}
+                                key={contact._id}
+                                className="group relative bg-[#0F0F0F] border border-white/5 hover:border-purple-500/30 rounded-2xl p-5 transition-all hover:bg-[#141414] hover:shadow-xl hover:shadow-purple-900/10 cursor-default"
+                            >
+                                <div className="flex justify-between items-start mb-4">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-neutral-800 to-black border border-white/10 flex items-center justify-center text-lg font-bold text-white shadow-inner group-hover:scale-110 transition-transform duration-300">
+                                            {contact.name.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div>
+                                            <h4 className="font-bold text-white text-base leading-tight group-hover:text-purple-400 transition-colors">{contact.name}</h4>
+                                            <div className="flex items-center gap-1.5 text-xs text-neutral-400 mt-1">
+                                                {contact.role && <span>{contact.role}</span>}
+                                                {contact.company && (
+                                                    <>
+                                                        <span className="w-1 h-1 rounded-full bg-neutral-600" />
+                                                        <span className="flex items-center gap-1"><Building className="w-3 h-3" /> {contact.company}</span>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                        <button
+                                            onClick={() => handleOpenModal(contact)}
+                                            className="p-2 hover:bg-white/10 rounded-xl text-neutral-400 hover:text-white transition-colors"
+                                            title="Edit"
+                                        >
+                                            <Edit2 className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={(e) => handleDelete(contact._id, e)}
+                                            className="p-2 hover:bg-red-500/10 rounded-xl text-neutral-400 hover:text-red-400 transition-colors"
+                                            title="Delete"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
 
-                            <div className="mt-4 flex flex-wrap gap-2">
-                                {contact.email && (
-                                    <div className="flex items-center gap-1.5 px-2 py-1 bg-white/5 rounded-lg text-[10px] text-neutral-300">
-                                        <Mail className="w-3 h-3" /> {contact.email}
-                                    </div>
-                                )}
-                                {contact.phone && (
-                                    <div className="flex items-center gap-1.5 px-2 py-1 bg-white/5 rounded-lg text-[10px] text-neutral-300">
-                                        <Phone className="w-3 h-3" /> {contact.phone}
-                                    </div>
-                                )}
+                                <div className="grid grid-cols-2 gap-2 mt-2">
+                                    {contact.email && (
+                                        <a href={`mailto:${contact.email}`} className="flex items-center gap-2 p-2 rounded-xl bg-white/[0.03] hover:bg-white/10 transition-colors text-xs text-neutral-300 overflow-hidden">
+                                            <Mail className="w-3.5 h-3.5 shrink-0 text-blue-400" />
+                                            <span className="truncate">{contact.email}</span>
+                                        </a>
+                                    )}
+                                    {contact.phone && (
+                                        <a href={`tel:${contact.phone}`} className="flex items-center gap-2 p-2 rounded-xl bg-white/[0.03] hover:bg-white/10 transition-colors text-xs text-neutral-300 overflow-hidden">
+                                            <Phone className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                                            <span className="truncate">{contact.phone}</span>
+                                        </a>
+                                    )}
+                                </div>
+
                                 {contact.linkedinUrl && (
-                                    <a href={contact.linkedinUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-2 py-1 bg-[#0077b5]/10 text-[#0077b5] rounded-lg text-[10px] hover:bg-[#0077b5]/20">
-                                        <Linkedin className="w-3 h-3" /> LinkedIn
+                                    <a
+                                        href={contact.linkedinUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="mt-2 flex items-center justify-center gap-2 w-full py-2 rounded-xl bg-[#0077b5]/10 text-[#0077b5] text-xs font-bold uppercase tracking-wider hover:bg-[#0077b5]/20 transition-colors"
+                                    >
+                                        <Linkedin className="w-3.5 h-3.5" /> View Profile
                                     </a>
                                 )}
-                            </div>
-                        </div>
-                    ))
-                )}
+                            </motion.div>
+                        ))
+                    )}
+                </AnimatePresence>
             </div>
 
             {/* Modal */}
-            {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-[#111] border border-white/10 rounded-3xl w-full max-w-lg shadow-2xl p-6 relative animate-in zoom-in-95 duration-200">
-                        <button onClick={handleCloseModal} className="absolute top-4 right-4 p-2 hover:bg-white/10 rounded-full text-neutral-500 hover:text-white transition-colors">
-                            <X className="w-5 h-5" />
-                        </button>
-
-                        <h2 className="text-xl font-bold text-white mb-6">
-                            {editingContact ? "Edit Contact" : "Add New Contact"}
-                        </h2>
-
-                        <form onSubmit={handleSave} className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider ml-1">Name</label>
-                                    <input required name="name" value={formData.name} onChange={handleChange} className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:border-purple-500 outline-none" placeholder="John Doe" />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider ml-1">Role</label>
-                                    <input name="role" value={formData.role} onChange={handleChange} className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:border-purple-500 outline-none" placeholder="CEO" />
-                                </div>
+            <AnimatePresence>
+                {isModalOpen && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+                            onClick={handleCloseModal}
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                            className="bg-[#111] border border-white/10 rounded-3xl w-full max-w-lg shadow-2xl p-0 relative z-10 overflow-hidden flex flex-col max-h-[90vh]"
+                        >
+                            <div className="p-6 border-b border-white/5 flex justify-between items-center bg-[#151515]">
+                                <h2 className="text-xl font-bold text-white">
+                                    {editingContact ? "Edit Contact" : "Add New Contact"}
+                                </h2>
+                                <button onClick={handleCloseModal} className="p-2 hover:bg-white/10 rounded-full text-neutral-500 hover:text-white transition-colors">
+                                    <X className="w-5 h-5" />
+                                </button>
                             </div>
 
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider ml-1">Company</label>
-                                <input name="company" value={formData.company} onChange={handleChange} className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:border-purple-500 outline-none" placeholder="Acme Inc." />
+                            <div className="p-6 overflow-y-auto custom-scrollbar">
+                                <form id="contact-form" onSubmit={handleSave} className="space-y-5">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider ml-1">Name</label>
+                                            <input required name="name" value={formData.name} onChange={handleChange} className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-purple-500 outline-none transition-colors focus:bg-[#0F0F0F]" placeholder="John Doe" />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider ml-1">Role</label>
+                                            <input name="role" value={formData.role} onChange={handleChange} className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-purple-500 outline-none transition-colors focus:bg-[#0F0F0F]" placeholder="CEO" />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider ml-1">Company</label>
+                                        <div className="relative">
+                                            <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-600" />
+                                            <input name="company" value={formData.company} onChange={handleChange} className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:border-purple-500 outline-none transition-colors focus:bg-[#0F0F0F]" placeholder="Acme Inc." />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider ml-1">Email</label>
+                                            <input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-purple-500 outline-none transition-colors focus:bg-[#0F0F0F]" placeholder="john@example.com" />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider ml-1">Phone</label>
+                                            <input name="phone" value={formData.phone} onChange={handleChange} className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-purple-500 outline-none transition-colors focus:bg-[#0F0F0F]" placeholder="+1 234..." />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider ml-1">LinkedIn URL</label>
+                                        <div className="relative">
+                                            <Linkedin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-600" />
+                                            <input name="linkedinUrl" value={formData.linkedinUrl} onChange={handleChange} className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:border-purple-500 outline-none transition-colors focus:bg-[#0F0F0F]" placeholder="https://linkedin.com/in/..." />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider ml-1">Notes</label>
+                                        <textarea name="notes" value={formData.notes} onChange={handleChange} rows="3" className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-purple-500 outline-none resize-none transition-colors focus:bg-[#0F0F0F]" placeholder="Additional context..." />
+                                    </div>
+                                </form>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider ml-1">Email</label>
-                                    <input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:border-purple-500 outline-none" placeholder="john@example.com" />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider ml-1">Phone</label>
-                                    <input name="phone" value={formData.phone} onChange={handleChange} className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:border-purple-500 outline-none" placeholder="+1 234 567 890" />
-                                </div>
-                            </div>
-
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider ml-1">LinkedIn URL</label>
-                                <input name="linkedinUrl" value={formData.linkedinUrl} onChange={handleChange} className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:border-purple-500 outline-none" placeholder="https://linkedin.com/in/john" />
-                            </div>
-
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider ml-1">Notes</label>
-                                <textarea name="notes" value={formData.notes} onChange={handleChange} rows="3" className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:border-purple-500 outline-none resize-none" placeholder="Met at conference..." />
-                            </div>
-
-                            <div className="pt-4">
-                                <button disabled={saving} type="submit" className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg flex justify-center items-center gap-2">
+                            <div className="p-6 border-t border-white/5 bg-[#151515]">
+                                <button
+                                    type="submit"
+                                    form="contact-form"
+                                    disabled={saving}
+                                    className="w-full bg-white text-black font-bold py-3.5 rounded-xl transition-all shadow-lg hover:bg-neutral-200 flex justify-center items-center gap-2"
+                                >
                                     {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                                     {saving ? "Saving..." : (editingContact ? "Update Contact" : "Create Contact")}
                                 </button>
                             </div>
-                        </form>
+                        </motion.div>
                     </div>
-                </div>
-            )}
+                )}
+            </AnimatePresence>
         </div>
     );
 }

@@ -3,8 +3,9 @@ import {
     User, Mail, Building, Globe, Save, Loader2,
     Linkedin, Twitter, Github, Instagram, Link as LinkIcon,
     MapPin, Briefcase, Award, TrendingUp, ShieldCheck, CheckCircle2,
-    Mic, Square, Play, Pause, Upload
+    Mic, Square, Play, Pause, Upload, Camera, Sparkles, ChevronRight
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import Sidebar from "../components/Sidebar";
 import ContactList from "../components/ContactList";
 
@@ -49,10 +50,6 @@ export default function Profile() {
                 return;
             }
             try {
-                const response = await fetch(`${BACKEND_URL}/user/profile?email=${userEmail}`); // Assuming GET support or we just use local storage for initial load for now, BUT we need to check if voice exists.
-                // Since we changed the backend to return voiceProfile boolean on update, we should also probably have a GET route for profile to get that status.
-                // For now, let's try to fetch the voice directly to see if it exists.
-
                 // Fetch Voice
                 try {
                     const voiceRes = await fetch(`${BACKEND_URL}/user/voice/${userEmail}`);
@@ -114,10 +111,10 @@ export default function Profile() {
 
                 const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
                 const updatedUser = { ...currentUser, name: formData.name };
-                localStorage.setItem("user", JSON.stringify(updatedUser));
+                localStorage.setItem("user", JSON.stringify(updatedUser)); // Keep consistent with Sidebar
 
                 window.dispatchEvent(new Event("userUpdated"));
-                alert("✅ Profile Updated Successfully");
+                // Could add a toast notification here
             } else {
                 alert(`❌ Error: ${data.message}`);
             }
@@ -197,7 +194,6 @@ export default function Profile() {
             });
 
             if (res.ok) {
-                alert("✅ Voice Intro Uploaded!");
                 setSavedAudioUrl(URL.createObjectURL(audioBlob)); // Update saved URL
                 setAudioBlob(null); // Clear pending blob
                 setAudioUrl(null);
@@ -210,6 +206,21 @@ export default function Profile() {
         }
     };
 
+    const containerVariants = {
+        hidden: { opacity: 0 },
+        visible: {
+            opacity: 1,
+            transition: {
+                staggerChildren: 0.1
+            }
+        }
+    };
+
+    const itemVariants = {
+        hidden: { opacity: 0, y: 20 },
+        visible: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } }
+    };
+
     return (
         <div className="flex h-screen bg-[#020202] text-white overflow-hidden font-sans selection:bg-purple-500/30">
             <Sidebar />
@@ -219,18 +230,26 @@ export default function Profile() {
                 <div className="fixed top-0 left-0 w-full h-[500px] bg-gradient-to-b from-blue-900/10 to-transparent pointer-events-none" />
                 <div className="fixed -top-40 -right-40 w-96 h-96 bg-purple-600/10 blur-[120px] pointer-events-none" />
 
-                <div className="max-w-7xl mx-auto w-full p-4 md:p-8 lg:p-12 z-10 relative">
+                <motion.div
+                    variants={containerVariants}
+                    initial="hidden"
+                    animate="visible"
+                    className="max-w-7xl mx-auto w-full p-6 md:p-8 lg:p-12 z-10 relative"
+                >
 
                     {/* Page Header */}
                     <div className="mb-10 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 border-b border-white/5 pb-6">
                         <div>
-                            <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Account Settings</h1>
+                            <h1 className="text-3xl lg:text-4xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">
+                                <User className="w-8 h-8 text-purple-400" />
+                                Account Settings
+                            </h1>
                             <p className="text-neutral-400 text-sm">Manage your personal profile and workspace preferences.</p>
                         </div>
                         <button
                             onClick={handleSave}
                             disabled={saving || loading}
-                            className="group relative inline-flex items-center gap-2 px-6 py-2.5 bg-white text-black rounded-xl font-semibold text-sm hover:bg-neutral-200 transition-all shadow-[0_0_20px_-5px_rgba(255,255,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="group relative inline-flex items-center gap-2 px-6 py-2.5 bg-white text-black rounded-xl font-bold text-sm hover:bg-neutral-200 transition-all shadow-[0_0_20px_-5px_rgba(255,255,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                             {saving ? "Saving Changes..." : "Save Profile"}
@@ -245,85 +264,93 @@ export default function Profile() {
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
 
                             {/* --- LEFT COLUMN (Profile Card) --- */}
-                            <div className="lg:col-span-4 space-y-6">
+                            <motion.div variants={itemVariants} className="lg:col-span-4 space-y-6">
                                 {/* Identity Card */}
-                                <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl overflow-hidden relative group transition-all duration-300 hover:border-white/10">
+                                <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl overflow-hidden relative group transition-all duration-300 hover:border-white/10 shadow-2xl">
                                     {/* Cover Image */}
-                                    <div className="h-32 w-full bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 relative">
+                                    <div className="h-36 w-full bg-gradient-to-r from-slate-900 via-purple-900 to-slate-900 relative">
                                         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-soft-light"></div>
-                                        <div className="absolute top-4 right-4 bg-black/20 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-[10px] font-bold tracking-wider text-white uppercase">
+                                        <div className="absolute top-4 right-4 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-[10px] font-bold tracking-wider text-white uppercase flex items-center gap-1.5">
+                                            <Sparkles className="w-3 h-3 text-amber-400" />
                                             PRO CLASS
                                         </div>
                                     </div>
 
                                     <div className="px-6 pb-6 relative">
                                         {/* Avatar */}
-                                        <div className="relative -mt-12 mb-4 inline-block">
-                                            <div className="w-24 h-24 rounded-2xl bg-[#111] border-[4px] border-[#0A0A0A] flex items-center justify-center text-3xl font-bold text-neutral-200 shadow-2xl relative overflow-hidden group-hover:scale-105 transition-transform duration-500">
-                                                {/* Gradient Text Initials */}
-                                                <span className="bg-gradient-to-br from-white to-neutral-500 bg-clip-text text-transparent">
-                                                    {formData.name ? formData.name.split(" ").map(n => n[0]).join("").substring(0, 2).toUpperCase() : "AI"}
-                                                </span>
+                                        <div className="relative -mt-16 mb-4 inline-block">
+                                            <div className="w-28 h-28 rounded-3xl bg-[#0A0A0A] p-1.5 border border-white/10 shadow-2xl relative overflow-hidden group-hover:scale-105 transition-transform duration-500">
+                                                <div className="w-full h-full rounded-2xl bg-gradient-to-br from-[#1a1a1a] to-black flex items-center justify-center text-4xl font-bold text-white relative overflow-hidden">
+                                                    {/* Gradient Text Initials */}
+                                                    <span className="relative z-10 bg-gradient-to-br from-white to-neutral-500 bg-clip-text text-transparent">
+                                                        {formData.name ? formData.name.split(" ").map(n => n[0]).join("").substring(0, 2).toUpperCase() : "AI"}
+                                                    </span>
+                                                    {/* Glow effect */}
+                                                    <div className="absolute inset-0 bg-gradient-to-tr from-purple-500/0 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                                                </div>
                                             </div>
-                                            <div className="absolute -bottom-2 -right-2 p-1.5 bg-blue-600 rounded-full border-[4px] border-[#0A0A0A] shadow-lg" title="Verified Account">
-                                                <ShieldCheck className="w-3.5 h-3.5 text-white" />
+                                            <div className="absolute -bottom-2 -right-2 p-1.5 bg-blue-500 rounded-full border-[4px] border-[#0A0A0A] shadow-lg" title="Verified Account">
+                                                <ShieldCheck className="w-4 h-4 text-white" />
                                             </div>
                                         </div>
 
                                         {/* Name & Role */}
                                         <div className="mb-6">
-                                            <h2 className="text-xl font-bold text-white mb-1">
+                                            <h2 className="text-2xl font-bold text-white mb-1 tracking-tight">
                                                 {formData.name || "Anonymous User"}
                                             </h2>
-                                            <div className="flex items-center gap-2 text-sm text-neutral-400">
-                                                <Briefcase className="w-3.5 h-3.5" />
+                                            <div className="flex items-center gap-2 text-sm text-neutral-400 font-medium">
+                                                <Briefcase className="w-4 h-4 text-purple-400" />
                                                 <span>{formData.role || "No Role Set"}</span>
                                                 {formData.company && (
                                                     <>
                                                         <span className="w-1 h-1 rounded-full bg-neutral-600" />
-                                                        <span>{formData.company}</span>
+                                                        <span className="text-neutral-300">{formData.company}</span>
                                                     </>
                                                 )}
                                             </div>
                                         </div>
 
-                                        {/* Quick Stats (Dummy for visuals) */}
+                                        {/* Quick Stats */}
                                         <div className="grid grid-cols-2 gap-3 py-4 border-t border-white/5">
-                                            <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
-                                                <div className="text-xs text-neutral-500 mb-1">Campigns</div>
+                                            <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
+                                                <div className="text-xs text-neutral-500 mb-1 font-semibold uppercase tracking-wider">Campaigns</div>
                                                 <div className="text-lg font-bold text-white flex items-center gap-2">
-                                                    12 <TrendingUp className="w-3 h-3 text-emerald-500" />
+                                                    12 <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
                                                 </div>
                                             </div>
-                                            <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
-                                                <div className="text-xs text-neutral-500 mb-1">Avg Open Rate</div>
+                                            <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
+                                                <div className="text-xs text-neutral-500 mb-1 font-semibold uppercase tracking-wider">Avg Open Rate</div>
                                                 <div className="text-lg font-bold text-white flex items-center gap-2">
-                                                    48% <span className="text-[10px] text-neutral-500 font-normal">top 10%</span>
+                                                    48% <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded">Top 10%</span>
                                                 </div>
                                             </div>
                                         </div>
 
                                         {/* Status Badge */}
-                                        <div className="mt-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/5 border border-emerald-500/10 text-xs text-emerald-400">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                        <div className="mt-4 flex items-center gap-2 px-3 py-2.5 rounded-xl bg-emerald-500/5 border border-emerald-500/10 text-xs font-bold text-emerald-400">
+                                            <div className="relative flex h-2 w-2">
+                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                            </div>
                                             System Active & Ready
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                            </motion.div>
 
                             {/* --- RIGHT COLUMN (Forms) --- */}
-                            <div className="lg:col-span-8">
+                            <motion.div variants={itemVariants} className="lg:col-span-8">
                                 <div className="space-y-8">
 
                                     {/* Section 1: Personal Details */}
                                     <section>
-                                        <div className="flex items-center gap-2 mb-6">
-                                            <div className="p-1.5 rounded bg-blue-500/10 text-blue-400"><User className="w-4 h-4" /></div>
-                                            <h3 className="text-sm font-bold uppercase tracking-wider text-neutral-300">Personal Details</h3>
+                                        <div className="flex items-center gap-3 mb-6">
+                                            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400"><User className="w-5 h-5" /></div>
+                                            <h3 className="text-lg font-bold text-white">Personal Details</h3>
                                         </div>
 
-                                        <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-6 md:p-8 space-y-6">
+                                        <div className="bg-[#0A0A0A]/60 backdrop-blur-xl border border-white/5 rounded-3xl p-6 md:p-8 space-y-6 shadow-xl">
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                 <ModernInput label="Full Name" name="name" value={formData.name} onChange={handleChange} placeholder="e.g. Rahul Sharma" />
                                                 <ModernInput label="Job Title" name="role" value={formData.role} onChange={handleChange} placeholder="e.g. Head of Growth" />
@@ -331,7 +358,7 @@ export default function Profile() {
                                             <ModernInput label="Email Address" name="email" value={formData.email} onChange={handleChange} placeholder="name@company.com" icon={Mail} />
 
                                             <div>
-                                                <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2 ml-1">Bio & Context</label>
+                                                <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2.5 ml-1">Bio & Context</label>
                                                 <textarea
                                                     name="bio"
                                                     value={formData.bio}
@@ -346,85 +373,107 @@ export default function Profile() {
 
                                     {/* --- VOICE INTRO SECTION --- */}
                                     <section>
-                                        <div className="flex items-center gap-2 mb-6">
-                                            <div className="p-1.5 rounded bg-pink-500/10 text-pink-400"><Mic className="w-4 h-4" /></div>
-                                            <h3 className="text-sm font-bold uppercase tracking-wider text-neutral-300">Voice Intro</h3>
+                                        <div className="flex items-center gap-3 mb-6">
+                                            <div className="p-2 rounded-xl bg-pink-500/10 text-pink-400"><Mic className="w-5 h-5" /></div>
+                                            <h3 className="text-lg font-bold text-white">Voice Intro</h3>
                                         </div>
 
-                                        <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-6 md:p-8">
-                                            <div className="flex flex-col md:flex-row items-center gap-6">
+                                        <div className="bg-[#0A0A0A]/60 backdrop-blur-xl border border-white/5 rounded-3xl p-6 md:p-8 shadow-xl relative overflow-hidden">
+                                            {/* Decorative blob */}
+                                            <div className="absolute -right-20 -top-20 w-64 h-64 bg-pink-500/5 blur-[80px] rounded-full pointer-events-none" />
+
+                                            <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
 
                                                 {/* Controls */}
                                                 <div className="flex items-center gap-4">
                                                     {!recording ? (
                                                         <button
                                                             onClick={startRecording}
-                                                            className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-400 rounded-xl hover:bg-red-500/20 transition-all border border-red-500/20"
+                                                            className="group flex flex-col items-center justify-center w-24 h-24 rounded-full bg-neutral-900 border border-white/10 hover:border-red-500/50 hover:bg-red-500/10 transition-all duration-300"
                                                         >
-                                                            <div className="w-2 h-2 rounded-full bg-red-500" />
-                                                            Record
+                                                            <div className="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center shadow-[0_0_15px_rgba(239,68,68,0.5)] group-hover:scale-110 transition-transform">
+                                                                <Mic className="w-4 h-4 text-white fill-white" />
+                                                            </div>
+                                                            <span className="text-[10px] font-bold text-neutral-400 mt-2 uppercase tracking-wider group-hover:text-red-400">Record</span>
                                                         </button>
                                                     ) : (
                                                         <button
                                                             onClick={stopRecording}
-                                                            className="flex items-center gap-2 px-4 py-2 bg-neutral-800 text-white rounded-xl hover:bg-neutral-700 transition-all border border-white/10 animate-pulse"
+                                                            className="group flex flex-col items-center justify-center w-24 h-24 rounded-full bg-neutral-900 border border-white/10 hover:border-neutral-500 hover:bg-neutral-800 transition-all duration-300"
                                                         >
-                                                            <Square className="w-3 h-3 fill-current" />
-                                                            Stop
+                                                            <div className="w-8 h-8 rounded-md bg-white flex items-center justify-center shadow-[0_0_15px_rgba(255,255,255,0.5)] animate-pulse">
+                                                                <Square className="w-4 h-4 text-neutral-900 fill-neutral-900" />
+                                                            </div>
+                                                            <span className="text-[10px] font-bold text-white mt-2 uppercase tracking-wider">Stop</span>
                                                         </button>
                                                     )}
                                                 </div>
 
-                                                {/* Status / Player */}
+                                                {/* Player / Visualizer */}
                                                 <div className="flex-1 w-full relative">
-                                                    {recording && (
-                                                        <div className="text-sm text-red-400 flex items-center gap-2">
-                                                            <span className="relative flex h-2 w-2">
-                                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                                                            </span>
-                                                            Recording in progress...
+                                                    {recording ? (
+                                                        <div className="flex items-center gap-3 h-20 px-6 rounded-2xl bg-neutral-900/50 border border-white/5">
+                                                            <div className="flex items-center gap-1 h-8 flex-1 justify-center">
+                                                                {[...Array(20)].map((_, i) => (
+                                                                    <motion.div
+                                                                        key={i}
+                                                                        className="w-1 bg-red-500 rounded-full"
+                                                                        animate={{
+                                                                            height: [8, Math.random() * 24 + 8, 8],
+                                                                            opacity: [0.5, 1, 0.5]
+                                                                        }}
+                                                                        transition={{
+                                                                            duration: 0.5,
+                                                                            repeat: Infinity,
+                                                                            delay: i * 0.05
+                                                                        }}
+                                                                    />
+                                                                ))}
+                                                            </div>
+                                                            <div className="text-xs font-mono text-red-500 animate-pulse">REC</div>
                                                         </div>
-                                                    )}
+                                                    ) : (
+                                                        <div className="flex items-center gap-4 p-5 rounded-2xl bg-white/5 border border-white/5">
+                                                            {(audioUrl || savedAudioUrl) ? (
+                                                                <>
+                                                                    <button
+                                                                        onClick={() => playAudio(audioUrl || savedAudioUrl)}
+                                                                        className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-black hover:scale-105 transition-transform shadow-lg shadow-white/10"
+                                                                    >
+                                                                        {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
+                                                                    </button>
 
-                                                    {/* Preview Player */}
-                                                    {!recording && audioUrl && (
-                                                        <div className="flex items-center gap-4 p-3 rounded-xl bg-white/5 border border-white/5">
-                                                            <button
-                                                                onClick={() => playAudio(audioUrl)}
-                                                                className="p-2 rounded-full bg-white text-black hover:bg-neutral-200 transition-all"
-                                                            >
-                                                                {isPlaying && audioPlayerRef.current.src === audioUrl ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current pl-0.5" />}
-                                                            </button>
-                                                            <div className="flex-1">
-                                                                <div className="h-1 bg-white/10 rounded-full w-full overflow-hidden">
-                                                                    <div className="h-full bg-blue-500 w-1/2" /> {/* Dummy Progress */}
+                                                                    <div className="flex-1 space-y-2">
+                                                                        <div className="flex justify-between items-center text-xs text-neutral-400 font-medium">
+                                                                            <span>{audioUrl ? "New Recording" : "Saved Intro"}</span>
+                                                                            <span>0:15 / 0:30</span>
+                                                                        </div>
+                                                                        <div className="h-1.5 bg-neutral-800 rounded-full w-full overflow-hidden">
+                                                                            <motion.div
+                                                                                className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"
+                                                                                initial={{ width: "30%" }}
+                                                                                animate={{ width: isPlaying ? "100%" : "30%" }}
+                                                                                transition={{ duration: 30, ease: "linear" }}
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {audioUrl && (
+                                                                        <button
+                                                                            onClick={uploadVoice}
+                                                                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-blue-900/20"
+                                                                        >
+                                                                            <Upload className="w-3.5 h-3.5" />
+                                                                            Save
+                                                                        </button>
+                                                                    )}
+                                                                </>
+                                                            ) : (
+                                                                <div className="flex flex-col items-center justify-center w-full py-2 text-neutral-500 gap-2">
+                                                                    <Mic className="w-6 h-6 opacity-50" />
+                                                                    <span className="text-sm">No voice intro recorded yet</span>
                                                                 </div>
-                                                                <div className="text-[10px] text-neutral-500 mt-1 uppercase tracking-wider">New Recording</div>
-                                                            </div>
-                                                            <button
-                                                                onClick={uploadVoice}
-                                                                className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-xs font-bold uppercase tracking-wider rounded-lg hover:bg-blue-500 transition-all"
-                                                            >
-                                                                <Upload className="w-3 h-3" />
-                                                                Save
-                                                            </button>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Saved Voice Player (if exists and no new recording pending) */}
-                                                    {!recording && !audioUrl && savedAudioUrl && (
-                                                        <div className="flex items-center gap-4 p-3 rounded-xl bg-white/5 border border-white/5">
-                                                            <button
-                                                                onClick={() => playAudio(savedAudioUrl)}
-                                                                className="p-2 rounded-full bg-neutral-800 text-white border border-white/10 hover:bg-neutral-700 transition-all"
-                                                            >
-                                                                {isPlaying && audioPlayerRef.current.src === savedAudioUrl ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current pl-0.5" />}
-                                                            </button>
-                                                            <div className="flex-1">
-                                                                <div className="text-sm text-neutral-300">My Voice Intro</div>
-                                                                <div className="text-[10px] text-neutral-500">Click play to listen to your saved intro.</div>
-                                                            </div>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </div>
@@ -435,19 +484,19 @@ export default function Profile() {
 
                                     {/* Section 2: Professional Brand */}
                                     <section>
-                                        <div className="flex items-center gap-2 mb-6">
-                                            <div className="p-1.5 rounded bg-purple-500/10 text-purple-400"><Building className="w-4 h-4" /></div>
-                                            <h3 className="text-sm font-bold uppercase tracking-wider text-neutral-300">Professional Brand</h3>
+                                        <div className="flex items-center gap-3 mb-6">
+                                            <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400"><Building className="w-5 h-5" /></div>
+                                            <h3 className="text-lg font-bold text-white">Professional Brand</h3>
                                         </div>
 
-                                        <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-6 md:p-8 space-y-6">
+                                        <div className="bg-[#0A0A0A]/60 backdrop-blur-xl border border-white/5 rounded-3xl p-6 md:p-8 space-y-6 shadow-xl">
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                 <ModernInput label="Company Name" name="company" value={formData.company} onChange={handleChange} placeholder="e.g. Spacerocket" icon={Building} />
                                                 <ModernInput label="Website" name="website" value={formData.website} onChange={handleChange} placeholder="https://..." icon={Globe} />
                                             </div>
 
-                                            <div className="pt-4 border-t border-white/5">
-                                                <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider mb-4">Social Presence</label>
+                                            <div className="pt-6 border-t border-white/5">
+                                                <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider mb-5">Social Presence</label>
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                     <SocialInput label="LinkedIn" name="social_linkedin" value={formData.socials.linkedin} onChange={handleChange} icon={Linkedin} color="group-hover:text-[#0077b5]" />
                                                     <SocialInput label="Twitter" name="social_twitter" value={formData.socials.twitter} onChange={handleChange} icon={Twitter} color="group-hover:text-[#1DA1F2]" />
@@ -460,21 +509,21 @@ export default function Profile() {
 
                                     {/* Section 3: Contacts */}
                                     <section>
-                                        <div className="flex items-center gap-2 mb-6">
-                                            <div className="p-1.5 rounded bg-emerald-500/10 text-emerald-400"><User className="w-4 h-4" /></div>
-                                            <h3 className="text-sm font-bold uppercase tracking-wider text-neutral-300">Saved Contacts</h3>
+                                        <div className="flex items-center gap-3 mb-6">
+                                            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400"><User className="w-5 h-5" /></div>
+                                            <h3 className="text-lg font-bold text-white">Saved Contacts</h3>
                                         </div>
-                                        <div className="bg-[#0A0A0A] border border-white/5 rounded-3xl p-6 md:p-8">
+                                        <div className="bg-[#0A0A0A]/60 backdrop-blur-xl border border-white/5 rounded-3xl p-6 md:p-8 shadow-xl">
                                             <ContactList />
                                         </div>
                                     </section>
 
                                 </div>
-                            </div>
+                            </motion.div>
 
                         </div>
                     )}
-                </div>
+                </motion.div>
             </main>
         </div>
     );
@@ -484,7 +533,7 @@ export default function Profile() {
 
 const ModernInput = ({ label, name, value, onChange, placeholder, icon: Icon }) => (
     <div className="relative group">
-        <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-1.5 ml-1 group-focus-within:text-blue-500 transition-colors">
+        <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-2 ml-1 group-focus-within:text-blue-500 transition-colors">
             {label}
         </label>
         <div className="relative">
@@ -499,15 +548,15 @@ const ModernInput = ({ label, name, value, onChange, placeholder, icon: Icon }) 
                 value={value}
                 onChange={onChange}
                 placeholder={placeholder}
-                className={`w-full bg-[#0F0F0F] border border-white/5 rounded-2xl py-3 text-sm text-white focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all placeholder-neutral-700 hover:bg-[#141414] ${Icon ? 'pl-11 pr-4' : 'px-4'}`}
+                className={`w-full bg-[#0F0F0F] border border-white/10 rounded-2xl py-3.5 text-sm text-white focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all placeholder-neutral-700 hover:bg-[#141414] hover:border-white/20 ${Icon ? 'pl-11 pr-4' : 'px-4'}`}
             />
         </div>
     </div>
 );
 
 const SocialInput = ({ label, name, value, onChange, icon: Icon, color }) => (
-    <div className="flex items-center gap-3 group p-1 rounded-xl transition-all duration-300 focus-within:bg-white/[0.02]">
-        <div className={`p-2.5 rounded-xl bg-[#0F0F0F] border border-white/5 text-neutral-500 ${color} transition-colors group-hover:scale-110 shadow-sm`}>
+    <div className="flex items-center gap-3 group p-1.5 rounded-2xl transition-all duration-300 focus-within:bg-white/[0.02] hover:bg-white/[0.02] border border-transparent focus-within:border-white/5">
+        <div className={`p-3 rounded-xl bg-[#0F0F0F] border border-white/5 text-neutral-500 ${color} transition-colors group-hover:scale-105 shadow-sm`}>
             <Icon className="w-4 h-4" />
         </div>
         <div className="flex-1 relative">
@@ -517,7 +566,7 @@ const SocialInput = ({ label, name, value, onChange, icon: Icon, color }) => (
                 value={value}
                 onChange={onChange}
                 placeholder={`${label} URL...`}
-                className="w-full bg-transparent border-0 border-b border-transparent focus:border-white/10 py-2 text-sm text-neutral-300 focus:text-white focus:outline-none transition-all placeholder-neutral-700"
+                className="w-full bg-transparent border-none py-2 text-sm text-neutral-300 focus:text-white focus:outline-none transition-all placeholder-neutral-700 focus:ring-0"
             />
         </div>
     </div>

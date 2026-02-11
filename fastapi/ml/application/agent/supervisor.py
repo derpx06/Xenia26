@@ -8,30 +8,30 @@ def supervisor_node(state: AgentState) -> AgentState:
     Decides which worker node should act next based on the current state.
     """
     # 1. HUNTER: Get basic facts
-    if not state.get("prospect") or not state["prospect"].company:
+    if not state.prospect or not state.prospect.company:
         return {"next_step": "hunter"}
 
     # 2. PROFILER: Get personality
-    if not state.get("psych"):
+    if not state.psych:
         return {"next_step": "profiler"}
 
     # 3. STRATEGIST: Get plan
-    if not state.get("strategy"):
+    if not state.strategy:
         return {"next_step": "strategist"}
 
     # 4. SCRIBE: Write content
     # We write if:
     # a) No drafts exist yet
     # b) We have a critique that says "Fail" (iteration loop)
-    drafts = state.get("drafts", {})
-    critique = state.get("latest_critique")
+    drafts = state.drafts
+    critique = state.latest_critique
     
     if not drafts:
         return {"next_step": "scribe"}
     
     if critique and not critique.passed:
         # Check if we hit max revisions (optional check, but good for safety)
-        if state.get("revision_count", 0) > 3:
+        if state.revision_count > 3:
             logger.warning("👑 SUPERVISOR: Max revisions reached. Forcing END.")
             return {"next_step": "end"}
         return {"next_step": "scribe"}

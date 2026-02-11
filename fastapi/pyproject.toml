@@ -43,7 +43,20 @@ dependencies = [
     "chromadb>=1.4.1",
     "langsmith",
     "TTS>=0.22.0",
-    "torchaudio>=2.1.0"
+    "torchaudio>=2.1.0",
+    "melotts @ git+https://github.com/myshell-ai/MeloTTS.git",
+    "librosa==0.9.1",
+    "eng_to_ipa",
+    "inflect",
+    "unidecode",
+    "pypinyin",
+    "cn2an",
+    "jieba",
+    "langid",
+    "faster-whisper",
+    "whisper-timestamped",
+    "pydub",
+    "wavmark"
 ]
 
 [dependency-groups]
@@ -53,5 +66,8 @@ dev = [
 
 [tool.uv]
 override-dependencies = [
-    "langsmith>=0.1.0, <0.4.0"
+    "langsmith>=0.1.0, <0.4.0",
+    "transformers>=4.44.0",
+    "numpy>=1.24.4",
+    "librosa>=0.9.1"
 ]

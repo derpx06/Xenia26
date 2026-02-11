@@ -39,21 +39,22 @@ except Exception as e:
 @traceable(name="Hunter Node")
 async def hunter_node(state: AgentState) -> AgentState:
     logger.info("👻 HUNTER: Checking inputs...")
-    url = state.get("target_url")
-    logs = state.get("logs", [])
+    logs = state.logs
+    logs.append("👻 HUNTER: Starting research phase...")
+    url = state.target_url
     
     # 1. Check for valid URL
     if not url or url == "string" or "http" not in url:
         logs.append("👻 HUNTER: No valid URL provided. Switching to Search Mode.")
         
         # Fallback: Extract entities from instruction and search
-        instruction = state.get("user_instruction", "")
+        instruction = state.user_instruction
         # Very simple extraction or just use the instruction as query if short
         search_query = instruction
         
         try:
             logs.append(f"👻 HUNTER: Searching for '{search_query}'...")
-            search_results = await duckduckgo_search(search_query)
+            search_results = await duckduckgo_search.ainvoke(search_query)
             
             # Extract structured facts from search results
             profile = llm_client.chat.completions.create(
@@ -148,7 +149,7 @@ async def hunter_node(state: AgentState) -> AgentState:
         try:
             # Fallback to search using the URL as a query or extracting from it
             fallback_query = f"{url} profile info"
-            search_results = await duckduckgo_search(fallback_query)
+            search_results = await duckduckgo_search.ainvoke(fallback_query)
             
             profile = llm_client.chat.completions.create(
                 model=LOGIC_MODEL,
@@ -183,8 +184,9 @@ async def hunter_node(state: AgentState) -> AgentState:
 @traceable(name="Profiler Node")
 def profiler_node(state: AgentState) -> AgentState:
     logger.info("🧠 PROFILER: Analyzing personality & style...")
-    prospect: ProspectProfile = state.get("prospect")
-    logs = state.get("logs", [])
+    logs = state.logs
+    logs.append("🧠 PROFILER: Analyzing personality and writing style...")
+    prospect: ProspectProfile = state.prospect
     
     # Check KB for existing psych profile? (Optional optimization)
     
@@ -247,11 +249,12 @@ def strategist_node(state: AgentState) -> AgentState:
     Decides the Channel(s) based on user instruction.
     """
     logger.info("♟️ STRATEGIST: Planning attack...")
-    prospect: ProspectProfile = state["prospect"]
-    psych: PsychProfile = state.get("psych")
-    instruction = state["user_instruction"]
-    history = state.get("conversation_history", [])
-    logs = state.get("logs", [])
+    logs = state.logs
+    logs.append("♟️ STRATEGIST: Developing outreach strategy...")
+    prospect: ProspectProfile = state.prospect
+    psych: PsychProfile = state.psych
+    instruction = state.user_instruction
+    history = state.conversation_history
     
     # Context string from history (last 3 messages)
     history_context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in history[-3:]]) if history else "No history."
@@ -318,14 +321,15 @@ def scribe_node(state: AgentState) -> AgentState:
     Writes content for ALL selected channels.
     """
     logger.info("✍️ SCRIBE: Drafting content...")
-    strategy: StrategyBrief = state["strategy"]
-    prospect: ProspectProfile = state["prospect"]
-    psych: PsychProfile = state.get("psych")
-    critique: CritiqueResult = state.get("latest_critique")
+    logs = state.logs
+    logs.append("✍️ SCRIBE: Drafting personalized content...")
+    strategy: StrategyBrief = state.strategy
+    prospect: ProspectProfile = state.prospect
+    psych: PsychProfile = state.psych
+    critique: CritiqueResult = state.latest_critique
     
-    current_drafts = state.get("drafts", {})
-    history = state.get("conversation_history", [])
-    logs = state.get("logs", [])
+    current_drafts = state.drafts
+    history = state.conversation_history
     
     # Context string from history
     history_context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in history[-5:]]) if history else "No previous conversation."
@@ -409,7 +413,7 @@ def scribe_node(state: AgentState) -> AgentState:
 
     return {
         "drafts": new_drafts, 
-        "revision_count": state.get("revision_count", 0) + 1,
+        "revision_count": state.revision_count + 1,
         "final_output": new_drafts, # Update final output
         "latest_critique": None, # Reset critique so Supervisor knows to send to Critic
         "logs": logs
@@ -422,10 +426,11 @@ def critic_node(state: AgentState) -> AgentState:
     Evaluates the drafts.
     """
     logger.info("⚖️ CRITIC: Judging work...")
-    strategy = state["strategy"]
-    drafts = state["drafts"]
-    psych: PsychProfile = state.get("psych")
-    logs = state.get("logs", [])
+    logs = state.logs
+    logs.append("⚖️ CRITIC: Quality assurance check...")
+    strategy = state.strategy
+    drafts = state.drafts
+    psych: PsychProfile = state.psych
     
     # Auto-pass general response
     if "general_response" in strategy.target_channels:
@@ -469,7 +474,7 @@ def critic_node(state: AgentState) -> AgentState:
         
         # If passed, save to KB as "good example" (optimistic)
         if critique.passed:
-            kb.save_outreach(state["prospect"], strategy, latest_draft)
+            kb.save_outreach(state.prospect, strategy, latest_draft)
             
         return {"latest_critique": critique, "logs": logs}
         

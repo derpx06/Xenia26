@@ -64,6 +64,7 @@ async def stream_agent_response(
             
             # If we have a final output, send it as the response
             if final_output:
+<<<<<<< HEAD
                 # --- FIX 1: UNWRAP DICTIONARY TO STRING ---
                 content_to_send = final_output
                 if isinstance(final_output, dict):
@@ -81,13 +82,23 @@ async def stream_agent_response(
                 chunk = AgentStreamChunk(
                     type="response",
                     content=content_to_send
+=======
+                content_str = json.dumps(final_output) if isinstance(final_output, (dict, list)) else str(final_output)
+                chunk = AgentStreamChunk(
+                    type="response",
+                    content=content_str
+>>>>>>> cc8804a081a7702c6742500b164c5aeefccd4cd0
                 )
                 yield f"data: {chunk.model_dump_json()}\n\n"
                 
                 # Send done signal
                 done_chunk = AgentStreamChunk(
                     type="done",
+<<<<<<< HEAD
                     content="Done",
+=======
+                    content=content_str,
+>>>>>>> cc8804a081a7702c6742500b164c5aeefccd4cd0
                     metadata={"iterations": iteration_count}
                 )
                 yield f"data: {done_chunk.model_dump_json()}\n\n"
