@@ -3,6 +3,8 @@ const bcrypt = require("bcryptjs");
 const User = require("../models/user");
 
 const router = express.Router();
+const sanitizeString = (v) => (typeof v === "string" ? v.trim() : "");
+const normalizeEmail = (v) => sanitizeString(v).toLowerCase();
 
 /**
  * =========================
@@ -13,7 +15,9 @@ router.post("/register", async (req, res) => {
   try {
     console.log("REGISTER BODY:", req.body);
 
-    const { name, email, password } = req.body;
+    const name = sanitizeString(req.body?.name);
+    const email = normalizeEmail(req.body?.email);
+    const password = req.body?.password;
 
     // Validate input
     if (!name || !email || !password) {
@@ -74,7 +78,8 @@ router.post("/login", async (req, res) => {
   try {
     console.log("LOGIN BODY:", req.body);
 
-    const { email, password } = req.body;
+    const email = normalizeEmail(req.body?.email);
+    const password = req.body?.password;
 
     if (!email || !password) {
       return res.status(400).json({

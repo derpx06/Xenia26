@@ -37,21 +37,34 @@ export default function OutreachChat() {
   const [streamingContent, setStreamingContent] = useState("");
   const [activeSendFlow, setActiveSendFlow] = useState(null);
   const [loadingAction, setLoadingAction] = useState(false);
+  const [playingAudioMsgId, setPlayingAudioMsgId] = useState(null);
+  const [audioState, setAudioState] = useState("idle"); // idle | playing | paused
   const bottomRef = useRef(null);
+  const activeAudioRef = useRef(null);
 
   // --- MENTIONS STATE ---
   const [contacts, setContacts] = useState([]);
   const [showMentions, setShowMentions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const [cursorPosition, setCursorPosition] = useState(null);
+  const [mentionStartPos, setMentionStartPos] = useState(null);
+  const [activeMentionIndex, setActiveMentionIndex] = useState(0);
   const [mentionedContacts, setMentionedContacts] = useState([]); // Track selected mentions
+  const [defaultVoices, setDefaultVoices] = useState([]);
+  const [customVoices, setCustomVoices] = useState([]);
+  const [voiceMode, setVoiceMode] = useState("auto"); // auto | default | custom
+  const [selectedDefaultVoice, setSelectedDefaultVoice] = useState("");
+  const [selectedCustomVoiceId, setSelectedCustomVoiceId] = useState("");
 
 
   // Fetch Contacts
   useEffect(() => {
     const fetchContacts = async () => {
       try {
-        const res = await fetch(`${BACKEND_API_URL}/contacts`);
+        const userEmail = localStorage.getItem("userEmail") || "";
+        const res = await fetch(`${BACKEND_API_URL}/contacts?email=${encodeURIComponent(userEmail)}`, {
+          headers: { "x-user-email": userEmail }
+        });
         if (res.ok) {
           const data = await res.json();
           setContacts(data);
@@ -61,6 +74,28 @@ export default function OutreachChat() {
       }
     };
     fetchContacts();
+  }, []);
+
+  useEffect(() => {
+    const fetchVoices = async () => {
+      try {
+        const userEmail = localStorage.getItem("userEmail");
+        const res = await fetch(`${API_BASE_URL}/ml/agent/sarge/voices?email=${encodeURIComponent(userEmail || "")}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const defaults = data.default_voices || [];
+        const customs = data.custom_voices || [];
+        setDefaultVoices(defaults);
+        setCustomVoices(customs);
+
+        const defaultCustom = customs.find((v) => v.is_default);
+        if (defaultCustom) setSelectedCustomVoiceId(defaultCustom.id);
+        if (defaults.length > 0) setSelectedDefaultVoice(defaults[0].id);
+      } catch (error) {
+        console.error("Failed to fetch voice options:", error);
+      }
+    };
+    fetchVoices();
   }, []);
 
   // Scroll to bottom
@@ -78,6 +113,64 @@ export default function OutreachChat() {
       bottomRef.current.scrollIntoView({ behavior: "auto", block: "end" });
     }
   }, [streamingContent]);
+
+  // Cleanup currently playing audio when leaving the screen
+  useEffect(() => {
+    return () => {
+      if (activeAudioRef.current) {
+        activeAudioRef.current.pause();
+        activeAudioRef.current = null;
+      }
+    };
+  }, []);
+
+  const playAudioForMessage = (audioUrl, msgId) => {
+    if (!audioUrl) return;
+
+    const fullUrl = audioUrl.startsWith("http") ? audioUrl : `${API_BASE_URL}${audioUrl}`;
+
+    // Toggle play/pause if same message is active
+    if (activeAudioRef.current && playingAudioMsgId === msgId) {
+      if (!activeAudioRef.current.paused) {
+        activeAudioRef.current.pause();
+        setAudioState("paused");
+      } else {
+        activeAudioRef.current.play();
+        setAudioState("playing");
+      }
+      return;
+    }
+
+    // Stop previous audio if another message starts
+    if (activeAudioRef.current) {
+      activeAudioRef.current.pause();
+      activeAudioRef.current = null;
+    }
+
+    const audio = new Audio(fullUrl);
+    activeAudioRef.current = audio;
+    setPlayingAudioMsgId(msgId);
+    setAudioState("playing");
+
+    audio.onended = () => {
+      setAudioState("idle");
+      setPlayingAudioMsgId(null);
+      activeAudioRef.current = null;
+    };
+    audio.onpause = () => {
+      if (!audio.ended) setAudioState("paused");
+    };
+    audio.onplay = () => {
+      setAudioState("playing");
+    };
+
+    audio.play().catch((err) => {
+      console.error("Audio playback failed:", err);
+      setAudioState("idle");
+      setPlayingAudioMsgId(null);
+      activeAudioRef.current = null;
+    });
+  };
 
   // --- ACTIONS (Email/WhatsApp/LinkedIn) ---
   const handleSendAction = async (msgIndex, content, type) => {
@@ -138,10 +231,24 @@ export default function OutreachChat() {
     if (!text) return;
     setLoadingAction(true);
     try {
+      const userEmail = localStorage.getItem("userEmail");
+      const selectedCustomVoice = customVoices.find((v) => v.id === selectedCustomVoiceId);
+      if (voiceMode === "custom" && !selectedCustomVoiceId) {
+        alert("Select a saved audio sample first.");
+        setLoadingAction(false);
+        return;
+      }
       const res = await fetch(`${API_BASE_URL}/ml/agent/sarge/voice`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text })
+        body: JSON.stringify({
+          text,
+          email: userEmail,
+          voice_mode: voiceMode,
+          default_voice_id: selectedDefaultVoice || null,
+          voice_profile_id: selectedCustomVoiceId || null,
+          personality: selectedCustomVoice?.personality || null
+        })
       });
       const data = await res.json();
       if (data.audio_url) {
@@ -152,9 +259,8 @@ export default function OutreachChat() {
           ));
         }
 
-        // Play it immediately
-        const audio = new Audio(`${API_BASE_URL}${data.audio_url}`);
-        audio.play();
+        // Play immediately and trigger in-chat audio animation
+        playAudioForMessage(data.audio_url, msgId || `manual-${Date.now()}`);
       }
     } catch (err) {
       console.error("Audio generation failed:", err);
@@ -325,28 +431,35 @@ export default function OutreachChat() {
     setInput(value);
     setCursorPosition(selectionStart);
 
-    // Detect @ mention
-    const lastAtPos = value.lastIndexOf("@", selectionStart);
-    if (lastAtPos !== -1) {
-      const textAfterAt = value.substring(lastAtPos + 1, selectionStart);
-      // Check if there are spaces, if so verify if it's a valid name part or end of mention
-      if (!textAfterAt.includes(" ") || (textAfterAt.split(" ").length < 3)) { // Allow spaces for full names (e.g. "John Doe")
-        setShowMentions(true);
-        setMentionQuery(textAfterAt);
-        return;
-      }
+    const beforeCursor = value.slice(0, selectionStart);
+    const mentionMatch = beforeCursor.match(/(?:^|\s)@([^\s@]*)$/);
+
+    if (mentionMatch) {
+      const query = mentionMatch[1] || "";
+      const start = selectionStart - query.length - 1; // include '@'
+      setMentionStartPos(start);
+      setMentionQuery(query);
+      setActiveMentionIndex(0);
+      setShowMentions(true);
+      return;
     }
+
+    setMentionStartPos(null);
+    setMentionQuery("");
+    setActiveMentionIndex(0);
     setShowMentions(false);
   };
 
   const handleMentionSelect = (contact) => {
-    const lastAtPos = input.lastIndexOf("@", cursorPosition);
-    if (lastAtPos !== -1) {
-      const before = input.substring(0, lastAtPos);
+    if (mentionStartPos != null && cursorPosition != null) {
+      const before = input.substring(0, mentionStartPos);
       const after = input.substring(cursorPosition);
       const newValue = `${before}@${contact.name} ${after}`;
       setInput(newValue);
       setShowMentions(false);
+      setMentionStartPos(null);
+      setMentionQuery("");
+      setActiveMentionIndex(0);
 
       // Add to mentioned contacts state
       setMentionedContacts(prev => {
@@ -359,9 +472,23 @@ export default function OutreachChat() {
     }
   };
 
-  const filteredContacts = contacts.filter(c =>
-    c.name.toLowerCase().includes(mentionQuery.toLowerCase())
-  );
+  const filteredContacts = contacts
+    .filter(c => {
+      const q = mentionQuery.toLowerCase();
+      return (
+        c.name?.toLowerCase().includes(q) ||
+        c.email?.toLowerCase().includes(q) ||
+        c.company?.toLowerCase().includes(q) ||
+        c.role?.toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => {
+      const q = mentionQuery.toLowerCase();
+      const aStarts = a.name?.toLowerCase().startsWith(q) ? 1 : 0;
+      const bStarts = b.name?.toLowerCase().startsWith(q) ? 1 : 0;
+      return bStarts - aStarts;
+    })
+    .slice(0, 8);
 
   return (
     <div className="flex h-screen bg-[#020202] text-white overflow-hidden font-sans selection:bg-purple-500/30">
@@ -393,6 +520,17 @@ export default function OutreachChat() {
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
           border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        @keyframes soundbar {
+          0% { transform: scaleY(0.3); opacity: 0.35; }
+          50% { transform: scaleY(1); opacity: 1; }
+          100% { transform: scaleY(0.3); opacity: 0.35; }
+        }
+        .sound-bar {
+          width: 3px;
+          border-radius: 999px;
+          background: linear-gradient(180deg, #22d3ee 0%, #3b82f6 100%);
+          transform-origin: center bottom;
         }
       `}</style>
 
@@ -614,6 +752,80 @@ export default function OutreachChat() {
                     {/* ACTIONS */}
                     {msg.role === 'assistant' && (
                       <div className="mt-3 w-full pl-1">
+                        <div className="mb-3 p-2 rounded-xl border border-white/10 bg-[#0f0f0f]/80 flex flex-wrap items-center gap-2">
+                          <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Audio Sample</span>
+                          <select
+                            value={voiceMode}
+                            onChange={(e) => setVoiceMode(e.target.value)}
+                            className="bg-[#0A0A0A] border border-white/10 rounded-lg px-2 py-1 text-[11px] text-zinc-200"
+                          >
+                            <option value="auto">Auto (default saved)</option>
+                            <option value="default">Model default voice</option>
+                            <option value="custom">Saved custom sample</option>
+                          </select>
+
+                          <select
+                            value={selectedCustomVoiceId}
+                            onChange={(e) => setSelectedCustomVoiceId(e.target.value)}
+                            disabled={voiceMode === "default"}
+                            className="bg-[#0A0A0A] border border-white/10 rounded-lg px-2 py-1 text-[11px] text-zinc-200 disabled:opacity-50"
+                          >
+                            <option value="">Select saved sample</option>
+                            {customVoices.map((voice) => (
+                              <option key={voice.id} value={voice.id}>
+                                {voice.name} ({voice.personality || "professional"})
+                              </option>
+                            ))}
+                          </select>
+
+                          <select
+                            value={selectedDefaultVoice}
+                            onChange={(e) => setSelectedDefaultVoice(e.target.value)}
+                            disabled={voiceMode === "custom"}
+                            className="bg-[#0A0A0A] border border-white/10 rounded-lg px-2 py-1 text-[11px] text-zinc-200 disabled:opacity-50"
+                          >
+                            {defaultVoices.length === 0 ? (
+                              <option value="">No model voices</option>
+                            ) : (
+                              defaultVoices.map((voice) => (
+                                <option key={voice.id} value={voice.id}>
+                                  {voice.name}
+                                </option>
+                              ))
+                            )}
+                          </select>
+                        </div>
+
+                        {msg.generated_content?.audio_path && (
+                          <div className="mb-3 p-3 rounded-xl border border-cyan-500/20 bg-cyan-500/5 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <button
+                                onClick={() => playAudioForMessage(msg.generated_content.audio_path, msg.id || i)}
+                                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-white/10 bg-black/40 hover:bg-black/60 transition-colors"
+                              >
+                                {playingAudioMsgId === (msg.id || i) && audioState === "playing" ? "Pause Audio" : "Play Audio"}
+                              </button>
+                              <span className="text-xs text-cyan-300">TTS Voice</span>
+                            </div>
+
+                            <div className="h-6 flex items-end gap-1">
+                              {[0, 1, 2, 3, 4, 5].map((bar) => (
+                                <div
+                                  key={bar}
+                                  className="sound-bar"
+                                  style={{
+                                    height: `${10 + ((bar % 3) * 5)}px`,
+                                    animation: playingAudioMsgId === (msg.id || i) && audioState === "playing"
+                                      ? `soundbar ${0.6 + (bar * 0.08)}s ease-in-out infinite`
+                                      : "none",
+                                    opacity: playingAudioMsgId === (msg.id || i) && audioState === "playing" ? 1 : 0.3
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         {(activeSendFlow?.msgIndex === i || msg.active_node === 'WRITER') ? (
                           <div className="w-full mt-4 animate-in slide-in-from-bottom-2 duration-300">
 
@@ -718,28 +930,37 @@ export default function OutreachChat() {
             {/* Input Area */}
             <div className="p-6 relative z-40 shrink-0 w-full max-w-4xl mx-auto">
               {/* Mentions Dropdown */}
-              {showMentions && filteredContacts.length > 0 && (
+              {showMentions && (
                 <div className="absolute bottom-24 left-6 z-50 w-64 bg-[#111] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-2">
-                  <div className="px-3 py-2 text-[10px] font-bold text-neutral-500 uppercase tracking-wider border-b border-white/5">
-                    Suggested Contacts
+                  <div className="px-3 py-2 text-[10px] font-bold text-neutral-500 uppercase tracking-wider border-b border-white/5 flex items-center justify-between">
+                    <span>Suggested Contacts</span>
+                    <span className="text-[9px] text-neutral-600 normal-case">Enter to select</span>
                   </div>
-                  <div className="max-h-48 overflow-y-auto custom-scrollbar">
-                    {filteredContacts.map(contact => (
-                      <button
-                        key={contact._id}
-                        onClick={() => handleMentionSelect(contact)}
-                        className="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 text-left transition-colors"
-                      >
-                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-800 to-blue-900 flex items-center justify-center text-[10px] font-bold text-white border border-white/10">
-                          {contact.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm text-white font-medium truncate">{contact.name}</div>
-                          {contact.company && <div className="text-[10px] text-neutral-500 truncate">{contact.company}</div>}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                  {filteredContacts.length > 0 ? (
+                    <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                      {filteredContacts.map((contact, idx) => (
+                        <button
+                          key={contact._id}
+                          onClick={() => handleMentionSelect(contact)}
+                          onMouseEnter={() => setActiveMentionIndex(idx)}
+                          className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${idx === activeMentionIndex ? "bg-white/10" : "hover:bg-white/5"
+                            }`}
+                        >
+                          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-800 to-blue-900 flex items-center justify-center text-[10px] font-bold text-white border border-white/10">
+                            {contact.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm text-white font-medium truncate">{contact.name}</div>
+                            <div className="text-[10px] text-neutral-500 truncate">
+                              {contact.role || "Contact"} {contact.company ? `• ${contact.company}` : ""}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="px-3 py-3 text-xs text-neutral-500">No contacts match “{mentionQuery}”.</div>
+                  )}
                 </div>
               )}
 
@@ -750,17 +971,36 @@ export default function OutreachChat() {
                     value={input}
                     onChange={handleInputChange}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && !isStreaming) {
-                        if (!showMentions) {
-                          sendMessage();
-                        } else if (filteredContacts.length > 0) {
-                          handleMentionSelect(filteredContacts[0]); // Select first on enter if menu open
-                          // Prevent submit
+                      if (showMentions) {
+                        if (e.key === "ArrowDown") {
                           e.preventDefault();
+                          if (filteredContacts.length > 0) {
+                            setActiveMentionIndex((prev) => (prev + 1) % filteredContacts.length);
+                          }
+                          return;
+                        }
+                        if (e.key === "ArrowUp") {
+                          e.preventDefault();
+                          if (filteredContacts.length > 0) {
+                            setActiveMentionIndex((prev) => (prev - 1 + filteredContacts.length) % filteredContacts.length);
+                          }
+                          return;
+                        }
+                        if ((e.key === "Enter" || e.key === "Tab") && filteredContacts.length > 0) {
+                          e.preventDefault();
+                          handleMentionSelect(filteredContacts[activeMentionIndex] || filteredContacts[0]);
+                          return;
+                        }
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setShowMentions(false);
+                          return;
                         }
                       }
-                      // Close mentions on escape
-                      if (e.key === "Escape") setShowMentions(false);
+
+                      if (e.key === "Enter" && !isStreaming && !showMentions) {
+                        sendMessage();
+                      }
                     }}
                     placeholder="Type your request here... Use @ to mention contacts"
                     className="flex-1 bg-transparent outline-none text-base text-white placeholder-neutral-600 font-medium"

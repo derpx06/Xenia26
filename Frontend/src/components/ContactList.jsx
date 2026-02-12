@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Search, MoreVertical, Phone, Mail, Linkedin, Trash2, Edit2, X, Loader2, User, Building, MapPin } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const BACKEND_URL = "http://localhost:8080/api";
+const FASTAPI_URL = "http://127.0.0.1:8000";
+const getUserEmail = () => localStorage.getItem("userEmail") || "";
 
 export default function ContactList() {
     const [contacts, setContacts] = useState([]);
@@ -11,6 +13,9 @@ export default function ContactList() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingContact, setEditingContact] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [scrapingFields, setScrapingFields] = useState({});
+    const scrapeTimersRef = useRef({});
+    const lastScrapedRef = useRef({});
 
     // Form State
     const [formData, setFormData] = useState({
@@ -30,7 +35,10 @@ export default function ContactList() {
     const fetchContacts = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${BACKEND_URL}/contacts`);
+            const userEmail = getUserEmail();
+            const res = await fetch(`${BACKEND_URL}/contacts?email=${encodeURIComponent(userEmail)}`, {
+                headers: { "x-user-email": userEmail }
+            });
             if (res.ok) {
                 const data = await res.json();
                 setContacts(data);
@@ -75,8 +83,74 @@ export default function ContactList() {
     };
 
     const handleChange = (e) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
+        const { name, value } = e.target;
+        setFormData({ ...formData, [name]: value });
+        if (name === "linkedinUrl" || name === "notes") {
+            scheduleContactScrape(name, value);
+        }
     };
+
+    const scheduleContactScrape = (fieldKey, value) => {
+        if (scrapeTimersRef.current[fieldKey]) {
+            clearTimeout(scrapeTimersRef.current[fieldKey]);
+        }
+        const links = fieldKey === "notes" ? extractUrls(value) : [value];
+        const normalizedLinks = links.map((l) => (l || "").trim()).filter((l) => l.startsWith("http"));
+        if (normalizedLinks.length === 0) return;
+
+        scrapeTimersRef.current[fieldKey] = setTimeout(() => {
+            scrapeContactFromLinks(fieldKey, value);
+        }, 700);
+    };
+
+    const extractUrls = (text) => {
+        const matches = (text || "").match(/https?:\/\/[^\s]+/g);
+        return matches || [];
+    };
+
+    const scrapeContactFromLinks = async (fieldKey, rawValue) => {
+        const links = fieldKey === "notes" ? extractUrls(rawValue) : [rawValue];
+        const normalizedLinks = links.map((l) => (l || "").trim()).filter((l) => l.startsWith("http"));
+        if (normalizedLinks.length === 0) return;
+        const cacheKey = `${fieldKey}:${normalizedLinks.join("|")}`;
+        if (lastScrapedRef.current[fieldKey] === cacheKey) return;
+
+        try {
+            setScrapingFields(prev => ({ ...prev, [fieldKey]: true }));
+            const res = await fetch(`${FASTAPI_URL}/ml/scrape/links`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    context: "contact",
+                    links: normalizedLinks
+                })
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const extracted = data?.extracted || {};
+
+            setFormData(prev => ({
+                ...prev,
+                name: prev.name || extracted.name || "",
+                role: prev.role || extracted.role || "",
+                company: prev.company || extracted.company || "",
+                email: prev.email || extracted.email || "",
+                linkedinUrl: prev.linkedinUrl || extracted.linkedinUrl || "",
+                notes: prev.notes || extracted.notes || ""
+            }));
+            lastScrapedRef.current[fieldKey] = cacheKey;
+        } catch (error) {
+            console.error(`Failed to scrape contact from ${fieldKey}:`, error);
+        } finally {
+            setScrapingFields(prev => ({ ...prev, [fieldKey]: false }));
+        }
+    };
+
+    useEffect(() => {
+        return () => {
+            Object.values(scrapeTimersRef.current).forEach((t) => clearTimeout(t));
+        };
+    }, []);
 
     const handleSave = async (e) => {
         e.preventDefault();
@@ -89,8 +163,11 @@ export default function ContactList() {
 
             const res = await fetch(url, {
                 method,
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(formData)
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-user-email": getUserEmail()
+                },
+                body: JSON.stringify({ ...formData, userEmail: getUserEmail() })
             });
 
             if (res.ok) {
@@ -110,7 +187,11 @@ export default function ContactList() {
         e.stopPropagation(); // Prevent opening edit modal
         if (!window.confirm("Are you sure you want to delete this contact?")) return;
         try {
-            await fetch(`${BACKEND_URL}/contacts/${id}`, { method: "DELETE" });
+            const userEmail = getUserEmail();
+            await fetch(`${BACKEND_URL}/contacts/${id}?email=${encodeURIComponent(userEmail)}`, {
+                method: "DELETE",
+                headers: { "x-user-email": userEmail }
+            });
             setContacts(contacts.filter(c => c._id !== id));
         } catch (error) {
             console.error("Error deleting contact:", error);
@@ -305,13 +386,36 @@ export default function ContactList() {
                                         <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider ml-1">LinkedIn URL</label>
                                         <div className="relative">
                                             <Linkedin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-600" />
-                                            <input name="linkedinUrl" value={formData.linkedinUrl} onChange={handleChange} className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:border-purple-500 outline-none transition-colors focus:bg-[#0F0F0F]" placeholder="https://linkedin.com/in/..." />
+                                            <input
+                                                name="linkedinUrl"
+                                                value={formData.linkedinUrl}
+                                                onChange={handleChange}
+                                                onBlur={(e) => scrapeContactFromLinks("linkedinUrl", e.target.value)}
+                                                className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl pl-10 pr-10 py-3 text-sm text-white focus:border-purple-500 outline-none transition-colors focus:bg-[#0F0F0F]"
+                                                placeholder="https://linkedin.com/in/..."
+                                            />
+                                            {scrapingFields.linkedinUrl && (
+                                                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-purple-400 animate-spin" />
+                                            )}
                                         </div>
                                     </div>
 
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider ml-1">Notes</label>
-                                        <textarea name="notes" value={formData.notes} onChange={handleChange} rows="3" className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-purple-500 outline-none resize-none transition-colors focus:bg-[#0F0F0F]" placeholder="Additional context..." />
+                                        <div className="relative">
+                                            <textarea
+                                                name="notes"
+                                                value={formData.notes}
+                                                onChange={handleChange}
+                                                onBlur={(e) => scrapeContactFromLinks("notes", e.target.value)}
+                                                rows="3"
+                                                className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl px-4 pr-10 py-3 text-sm text-white focus:border-purple-500 outline-none resize-none transition-colors focus:bg-[#0F0F0F]"
+                                                placeholder="Additional context... (links here will be auto-scraped)"
+                                            />
+                                            {scrapingFields.notes && (
+                                                <Loader2 className="absolute right-3 top-3 w-4 h-4 text-purple-400 animate-spin" />
+                                            )}
+                                        </div>
                                     </div>
                                 </form>
                             </div>

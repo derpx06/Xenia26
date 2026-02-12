@@ -1,6 +1,9 @@
 console.log("🏁 Starting server.js...");
-require("dotenv").config();
-console.log("✅ Dotenv loaded");
+const path = require("path");
+const dotenv = require("dotenv");
+dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, ".env.temp"), override: false });
+console.log("✅ Dotenv loaded (.env + fallback .env.temp)");
 const express = require("express");
 const cors = require("cors");
 const connectDB = require("./config/db");

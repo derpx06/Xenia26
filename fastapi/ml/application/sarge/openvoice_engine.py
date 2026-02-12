@@ -2,7 +2,6 @@
 import sys
 import os
 import torch
-import torch.nn as nn
 from loguru import logger
 
 # Add openvoice_lib to sys.path
@@ -52,6 +51,8 @@ class OpenVoiceEngine:
     def update_speaker(self, speaker_wav):
         logger.info(f"🎙️ OpenVoice: Processing speaker reference: {speaker_wav}")
         try:
+            # Reset current embedding first. If extraction fails, cloning should be disabled explicitly.
+            self.target_se = None
             # Cache embedding as .pt to avoid re-extraction
             cache_path = speaker_wav + ".se.pt"
             if os.path.exists(cache_path):
@@ -63,11 +64,22 @@ class OpenVoiceEngine:
                     vad=True
                 )
                 torch.save(self.target_se, cache_path)
+            if self.target_se is None:
+                raise RuntimeError("Speaker embedding extraction returned empty result")
             logger.info("🎙️ OpenVoice: Speaker embedding cached and ready.")
         except Exception as e:
             logger.error(f"🎙️ OpenVoice: Failed to extract speaker embedding - {e}")
+            raise
 
-    def speak(self, text, output_path):
+    def clear_speaker(self):
+        """Disable cloning and use plain base voice generation."""
+        self.target_se = None
+
+    def get_default_speakers(self):
+        spk_list = dict(self.speaker_ids.items()) if hasattr(self.speaker_ids, "items") else self.speaker_ids
+        return sorted(list(spk_list.keys()))
+
+    def speak(self, text, output_path, base_speaker: str | None = None):
         """
         Two-step synthesis:
         1. Base TTS (MeloTTS) -> temp.wav
@@ -78,7 +90,10 @@ class OpenVoiceEngine:
             # Step 1: Base synthesis
             # Default speaker for EN
             spk_list = dict(self.speaker_ids.items()) if hasattr(self.speaker_ids, 'items') else self.speaker_ids
-            speaker_id = spk_list.get(f'{self.language}-Default', 0)
+            if base_speaker and base_speaker in spk_list:
+                speaker_id = spk_list[base_speaker]
+            else:
+                speaker_id = spk_list.get(f'{self.language}-Default', 0)
             
             # MeloTTS synthesis
             self.base_model.tts_to_file(text, speaker_id, temp_wav, speed=1.0)

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Loader2, Send, X } from 'lucide-react';
 
 const BACKEND_URL = "http://localhost:8080/api";
+const getUserEmail = () => localStorage.getItem("userEmail") || "";
 
 export default function ContactInputStep({ activeSendFlow, setActiveSendFlow, executeSend, loadingAction, onCancel }) {
     // State for "Add Contact" prompt
@@ -14,7 +15,10 @@ export default function ContactInputStep({ activeSendFlow, setActiveSendFlow, ex
     useEffect(() => {
         const fetchContacts = async () => {
             try {
-                const res = await fetch(`${BACKEND_URL}/contacts`);
+                const userEmail = getUserEmail();
+                const res = await fetch(`${BACKEND_URL}/contacts?email=${encodeURIComponent(userEmail)}`, {
+                    headers: { "x-user-email": userEmail }
+                });
                 if (res.ok) {
                     const data = await res.json();
                     setContacts(data);
@@ -73,8 +77,11 @@ export default function ContactInputStep({ activeSendFlow, setActiveSendFlow, ex
         try {
             const res = await fetch(`${BACKEND_URL}/contacts`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(newContact)
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-user-email": getUserEmail()
+                },
+                body: JSON.stringify({ ...newContact, userEmail: getUserEmail() })
             });
 
             if (res.ok) {

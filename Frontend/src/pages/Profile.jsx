@@ -10,6 +10,88 @@ import Sidebar from "../components/Sidebar";
 import ContactList from "../components/ContactList";
 
 const BACKEND_URL = "http://localhost:8080/api";
+const FASTAPI_URL = "http://127.0.0.1:8000";
+
+const VOICE_CLONE_SCRIPT = "Hi, this is my voice sample for Xenia. I speak clearly at a natural pace. Please keep this tone warm, confident, and professional when generating my outreach audio.";
+
+const blobToBase64 = (blob) =>
+    new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const result = reader.result || "";
+            const base64 = String(result).split(",")[1];
+            if (!base64) {
+                reject(new Error("Failed to encode audio"));
+                return;
+            }
+            resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+
+const audioBufferToWav = (audioBuffer) => {
+    const numOfChannels = audioBuffer.numberOfChannels;
+    const sampleRate = audioBuffer.sampleRate;
+    const format = 1; // PCM
+    const bitDepth = 16;
+
+    const channelData = [];
+    for (let i = 0; i < numOfChannels; i++) {
+        channelData.push(audioBuffer.getChannelData(i));
+    }
+
+    const samples = audioBuffer.length;
+    const blockAlign = numOfChannels * (bitDepth / 8);
+    const byteRate = sampleRate * blockAlign;
+    const dataSize = samples * blockAlign;
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+
+    const writeString = (offset, str) => {
+        for (let i = 0; i < str.length; i++) {
+            view.setUint8(offset + i, str.charCodeAt(i));
+        }
+    };
+
+    let offset = 0;
+    writeString(offset, "RIFF"); offset += 4;
+    view.setUint32(offset, 36 + dataSize, true); offset += 4;
+    writeString(offset, "WAVE"); offset += 4;
+    writeString(offset, "fmt "); offset += 4;
+    view.setUint32(offset, 16, true); offset += 4;
+    view.setUint16(offset, format, true); offset += 2;
+    view.setUint16(offset, numOfChannels, true); offset += 2;
+    view.setUint32(offset, sampleRate, true); offset += 4;
+    view.setUint32(offset, byteRate, true); offset += 4;
+    view.setUint16(offset, blockAlign, true); offset += 2;
+    view.setUint16(offset, bitDepth, true); offset += 2;
+    writeString(offset, "data"); offset += 4;
+    view.setUint32(offset, dataSize, true); offset += 4;
+
+    for (let i = 0; i < samples; i++) {
+        for (let c = 0; c < numOfChannels; c++) {
+            const sample = Math.max(-1, Math.min(1, channelData[c][i] || 0));
+            view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+            offset += 2;
+        }
+    }
+
+    return buffer;
+};
+
+const convertBlobToWav = async (blob) => {
+    const arrayBuffer = await blob.arrayBuffer();
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const audioContext = new AudioCtx();
+    try {
+        const decoded = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+        const wavArrayBuffer = audioBufferToWav(decoded);
+        return new Blob([wavArrayBuffer], { type: "audio/wav" });
+    } finally {
+        await audioContext.close();
+    }
+};
 
 export default function Profile() {
     const [loading, setLoading] = useState(true);
@@ -37,6 +119,16 @@ export default function Profile() {
     const [audioUrl, setAudioUrl] = useState(null);
     const [savedAudioUrl, setSavedAudioUrl] = useState(null);
     const [isPlaying, setIsPlaying] = useState(false);
+    const [voiceStatus, setVoiceStatus] = useState("");
+    const [voiceSaving, setVoiceSaving] = useState(false);
+    const [voiceTesting, setVoiceTesting] = useState(false);
+    const [voiceProfileName, setVoiceProfileName] = useState("My Voice");
+    const [voicePersonality, setVoicePersonality] = useState("professional");
+    const [savedVoiceProfiles, setSavedVoiceProfiles] = useState([]);
+    const [voicesLoading, setVoicesLoading] = useState(false);
+    const [scrapingFields, setScrapingFields] = useState({});
+    const scrapeTimersRef = useRef({});
+    const lastScrapedLinkRef = useRef({});
     const mediaRecorderRef = useRef(null);
     const audioChunksRef = useRef([]);
     const audioPlayerRef = useRef(new Audio());
@@ -50,6 +142,41 @@ export default function Profile() {
                 return;
             }
             try {
+                // Fetch profile from backend (source of truth)
+                try {
+                    const profileRes = await fetch(`${BACKEND_URL}/user/profile/${encodeURIComponent(userEmail)}`);
+                    if (profileRes.ok) {
+                        const profileData = await profileRes.json();
+                        const user = profileData?.user || {};
+                        setFormData(prev => ({
+                            ...prev,
+                            name: user.name || "",
+                            email: user.email || userEmail,
+                            role: user.role || "",
+                            company: user.company || "",
+                            website: user.website || "",
+                            bio: user.bio || "",
+                            socials: {
+                                linkedin: user.socials?.linkedin || "",
+                                twitter: user.socials?.twitter || "",
+                                github: user.socials?.github || "",
+                                instagram: user.socials?.instagram || ""
+                            }
+                        }));
+                    } else {
+                        // Fallback to local storage
+                        setFormData(prev => ({
+                            ...prev,
+                            email: userEmail,
+                            name: localStorage.getItem("userName") || "",
+                            company: localStorage.getItem("userCompany") || "",
+                            role: localStorage.getItem("userRole") || ""
+                        }));
+                    }
+                } catch (err) {
+                    console.error("Error fetching profile from backend:", err);
+                }
+
                 // Fetch Voice
                 try {
                     const voiceRes = await fetch(`${BACKEND_URL}/user/voice/${userEmail}`);
@@ -62,13 +189,7 @@ export default function Profile() {
                     console.error("No voice profile found or error fetching", err);
                 }
 
-                setFormData(prev => ({
-                    ...prev,
-                    email: userEmail,
-                    name: localStorage.getItem("userName") || "",
-                    company: localStorage.getItem("userCompany") || "",
-                    role: localStorage.getItem("userRole") || ""
-                }));
+                await fetchVoiceProfiles(userEmail);
             } catch (error) {
                 console.error("Error loading profile:", error);
             } finally {
@@ -77,6 +198,34 @@ export default function Profile() {
         };
         fetchProfile();
     }, []);
+
+    useEffect(() => {
+        return () => {
+            Object.values(scrapeTimersRef.current).forEach((t) => clearTimeout(t));
+        };
+    }, []);
+
+    const fetchVoiceProfiles = async (emailOverride = null) => {
+        const email = emailOverride || localStorage.getItem("userEmail");
+        if (!email) return;
+        try {
+            setVoicesLoading(true);
+            const res = await fetch(`${FASTAPI_URL}/ml/agent/sarge/voices?email=${encodeURIComponent(email)}`);
+            if (!res.ok) return;
+            const data = await res.json();
+            const voices = data.custom_voices || [];
+            setSavedVoiceProfiles(voices);
+            const defaultVoice = voices.find(v => v.is_default);
+            if (defaultVoice) {
+                setVoiceProfileName(defaultVoice.name || "My Voice");
+                setVoicePersonality(defaultVoice.personality || "professional");
+            }
+        } catch (error) {
+            console.error("Failed to fetch saved voice profiles:", error);
+        } finally {
+            setVoicesLoading(false);
+        }
+    };
 
     // Handle Text Inputs
     const handleChange = (e) => {
@@ -87,8 +236,65 @@ export default function Profile() {
                 ...prev,
                 socials: { ...prev.socials, [socialKey]: value }
             }));
+
+            const fieldKey = `social_${socialKey}`;
+            scheduleProfileScrape(fieldKey, value);
         } else {
             setFormData(prev => ({ ...prev, [name]: value }));
+            if (name === "website") {
+                scheduleProfileScrape("website", value);
+            }
+        }
+    };
+
+    const scheduleProfileScrape = (fieldKey, value) => {
+        const link = (value || "").trim();
+        if (scrapeTimersRef.current[fieldKey]) {
+            clearTimeout(scrapeTimersRef.current[fieldKey]);
+        }
+        if (!link.startsWith("http")) return;
+        scrapeTimersRef.current[fieldKey] = setTimeout(() => {
+            scrapeProfileFromLink(fieldKey, link);
+        }, 700);
+    };
+
+    const scrapeProfileFromLink = async (fieldKey, linkValue) => {
+        const link = (linkValue || "").trim();
+        if (!link.startsWith("http")) return;
+        if (lastScrapedLinkRef.current[fieldKey] === link) return;
+        try {
+            setScrapingFields(prev => ({ ...prev, [fieldKey]: true }));
+            const res = await fetch(`${FASTAPI_URL}/ml/scrape/links`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    context: "profile",
+                    links: [link]
+                })
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const extracted = data?.extracted || {};
+
+            setFormData(prev => ({
+                ...prev,
+                name: prev.name || extracted.name || "",
+                role: prev.role || extracted.role || "",
+                company: prev.company || extracted.company || "",
+                website: prev.website || extracted.website || "",
+                bio: prev.bio || extracted.bio || "",
+                socials: {
+                    linkedin: prev.socials.linkedin || extracted?.socials?.linkedin || "",
+                    twitter: prev.socials.twitter || extracted?.socials?.twitter || "",
+                    github: prev.socials.github || extracted?.socials?.github || "",
+                    instagram: prev.socials.instagram || extracted?.socials?.instagram || "",
+                }
+            }));
+            lastScrapedLinkRef.current[fieldKey] = link;
+        } catch (error) {
+            console.error(`Failed to scrape ${fieldKey}:`, error);
+        } finally {
+            setScrapingFields(prev => ({ ...prev, [fieldKey]: false }));
         }
     };
 
@@ -97,10 +303,20 @@ export default function Profile() {
         setSaving(true);
         try {
             const userEmail = localStorage.getItem("userEmail");
+            const payload = {
+                ...formData,
+                email: userEmail,
+                socials: {
+                    linkedin: formData.socials?.linkedin || "",
+                    twitter: formData.socials?.twitter || "",
+                    github: formData.socials?.github || "",
+                    instagram: formData.socials?.instagram || "",
+                }
+            };
             const response = await fetch(`${BACKEND_URL}/user/profile`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ...formData, email: userEmail })
+                body: JSON.stringify(payload)
             });
             const data = await response.json();
 
@@ -108,6 +324,9 @@ export default function Profile() {
                 localStorage.setItem("userName", formData.name);
                 localStorage.setItem("userCompany", formData.company);
                 localStorage.setItem("userRole", formData.role);
+                localStorage.setItem("userWebsite", formData.website || "");
+                localStorage.setItem("userBio", formData.bio || "");
+                localStorage.setItem("userSocials", JSON.stringify(formData.socials || {}));
 
                 const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
                 const updatedUser = { ...currentUser, name: formData.name };
@@ -131,7 +350,11 @@ export default function Profile() {
     const startRecording = async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorderRef.current = new MediaRecorder(stream);
+            const preferredTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+            const mimeType = preferredTypes.find((type) => MediaRecorder.isTypeSupported(type));
+            mediaRecorderRef.current = mimeType
+                ? new MediaRecorder(stream, { mimeType })
+                : new MediaRecorder(stream);
             audioChunksRef.current = [];
 
             mediaRecorderRef.current.ondataavailable = (event) => {
@@ -141,7 +364,9 @@ export default function Profile() {
             };
 
             mediaRecorderRef.current.onstop = () => {
-                const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+                const blob = new Blob(audioChunksRef.current, {
+                    type: mediaRecorderRef.current?.mimeType || "audio/webm"
+                });
                 setAudioBlob(blob);
                 setAudioUrl(URL.createObjectURL(blob));
             };
@@ -181,28 +406,137 @@ export default function Profile() {
 
     const uploadVoice = async () => {
         if (!audioBlob) return;
-
         const userEmail = localStorage.getItem("userEmail");
-        const formData = new FormData();
-        formData.append("voice", audioBlob, "voice-intro.webm");
-        formData.append("email", userEmail);
+        if (!userEmail) {
+            alert("Please login first.");
+            return;
+        }
 
         try {
+            setVoiceSaving(true);
+            setVoiceStatus("Converting recording to WAV...");
+            const wavBlob = await convertBlobToWav(audioBlob);
+
+            const formData = new FormData();
+            formData.append("voice", wavBlob, "voice-intro.wav");
+            formData.append("email", userEmail);
+
+            setVoiceStatus("Saving voice profile...");
             const res = await fetch(`${BACKEND_URL}/user/voice`, {
                 method: "POST",
                 body: formData
             });
 
-            if (res.ok) {
-                setSavedAudioUrl(URL.createObjectURL(audioBlob)); // Update saved URL
-                setAudioBlob(null); // Clear pending blob
-                setAudioUrl(null);
-            } else {
+            if (!res.ok) {
                 alert("Failed to upload voice.");
+                setVoiceStatus("Failed to save voice profile.");
+                return;
             }
+
+            // Mirror the same sample to FastAPI so TTS cloning can actually use it.
+            const audioBase64 = await blobToBase64(wavBlob);
+
+            const ttsRes = await fetch(`${FASTAPI_URL}/ml/agent/sarge/voice-profile`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    email: userEmail,
+                    audio_base64: audioBase64,
+                    extension: ".wav",
+                    profile_name: voiceProfileName,
+                    personality: voicePersonality,
+                    use_as_default: true
+                })
+            });
+
+            if (!ttsRes.ok) {
+                const err = await ttsRes.text();
+                setVoiceStatus(`Saved to profile, but TTS clone setup failed: ${err}`);
+                return;
+            }
+
+            setSavedAudioUrl(URL.createObjectURL(wavBlob));
+            setAudioBlob(null);
+            setAudioUrl(null);
+            setVoiceStatus("Voice profile saved. TTS cloning is ready.");
+            await fetchVoiceProfiles(userEmail);
         } catch (error) {
             console.error("Upload Error:", error);
             alert("Error uploading voice.");
+            setVoiceStatus("Error uploading voice profile.");
+        } finally {
+            setVoiceSaving(false);
+        }
+    };
+
+    const setDefaultVoiceProfile = async (profileId) => {
+        try {
+            const res = await fetch(`${FASTAPI_URL}/ml/agent/sarge/voice-profiles/${profileId}/default`, {
+                method: "PATCH"
+            });
+            if (!res.ok) {
+                throw new Error("Failed to set default voice");
+            }
+            setVoiceStatus("Default voice updated.");
+            await fetchVoiceProfiles();
+        } catch (error) {
+            console.error(error);
+            setVoiceStatus("Failed to update default voice.");
+        }
+    };
+
+    const deleteVoiceProfile = async (profileId) => {
+        try {
+            const res = await fetch(`${FASTAPI_URL}/ml/agent/sarge/voice-profiles/${profileId}`, {
+                method: "DELETE"
+            });
+            if (!res.ok) {
+                throw new Error("Failed to delete voice");
+            }
+            setVoiceStatus("Voice profile deleted.");
+            await fetchVoiceProfiles();
+        } catch (error) {
+            console.error(error);
+            setVoiceStatus("Failed to delete voice profile.");
+        }
+    };
+
+    const testClonedVoice = async () => {
+        const userEmail = localStorage.getItem("userEmail");
+        if (!userEmail) {
+            alert("Please login first.");
+            return;
+        }
+
+        try {
+            setVoiceTesting(true);
+            setVoiceStatus("Generating cloned voice preview...");
+            const res = await fetch(`${FASTAPI_URL}/ml/agent/sarge/voice`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    text: VOICE_CLONE_SCRIPT,
+                    email: userEmail
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data?.detail || "Voice preview failed");
+            }
+            if (data.audio_url) {
+                const audio = new Audio(`${FASTAPI_URL}${data.audio_url}`);
+                await audio.play();
+                setVoiceStatus(
+                    data.used_cloned_voice
+                        ? "Cloned voice preview generated successfully."
+                        : "Audio generated, but clone profile was not applied."
+                );
+            }
+        } catch (error) {
+            console.error("Voice test error:", error);
+            setVoiceStatus("Voice preview failed. Re-record and try again.");
+        } finally {
+            setVoiceTesting(false);
         }
     };
 
@@ -411,6 +745,35 @@ export default function Profile() {
 
                                                 {/* Player / Visualizer */}
                                                 <div className="flex-1 w-full relative">
+                                                    <div className="mb-4 p-4 rounded-2xl bg-neutral-900/60 border border-white/10">
+                                                        <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold mb-2">Recommended Recording Script</div>
+                                                        <p className="text-sm text-neutral-300 leading-relaxed">{VOICE_CLONE_SCRIPT}</p>
+                                                        <p className="text-xs text-neutral-500 mt-2">
+                                                            Record 20-30 seconds in a quiet room, steady pace, no music or background noise.
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                        <div>
+                                                            <label className="block text-[10px] uppercase tracking-wider text-neutral-500 font-bold mb-2">Voice Name</label>
+                                                            <input
+                                                                value={voiceProfileName}
+                                                                onChange={(e) => setVoiceProfileName(e.target.value)}
+                                                                placeholder="e.g. Founder Voice"
+                                                                className="w-full bg-[#0F0F0F] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] uppercase tracking-wider text-neutral-500 font-bold mb-2">Personality</label>
+                                                            <input
+                                                                value={voicePersonality}
+                                                                onChange={(e) => setVoicePersonality(e.target.value)}
+                                                                placeholder="e.g. friendly, assertive, calm"
+                                                                className="w-full bg-[#0F0F0F] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50"
+                                                            />
+                                                        </div>
+                                                    </div>
+
                                                     {recording ? (
                                                         <div className="flex items-center gap-3 h-20 px-6 rounded-2xl bg-neutral-900/50 border border-white/5">
                                                             <div className="flex items-center gap-1 h-8 flex-1 justify-center">
@@ -461,10 +824,11 @@ export default function Profile() {
                                                                     {audioUrl && (
                                                                         <button
                                                                             onClick={uploadVoice}
+                                                                            disabled={voiceSaving}
                                                                             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-blue-900/20"
                                                                         >
-                                                                            <Upload className="w-3.5 h-3.5" />
-                                                                            Save
+                                                                            {voiceSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                                                                            {voiceSaving ? "Saving..." : "Save"}
                                                                         </button>
                                                                     )}
                                                                 </>
@@ -476,6 +840,64 @@ export default function Profile() {
                                                             )}
                                                         </div>
                                                     )}
+
+                                                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                                                        <button
+                                                            onClick={testClonedVoice}
+                                                            disabled={voiceTesting || (!savedAudioUrl && !audioUrl)}
+                                                            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                                        >
+                                                            {voiceTesting ? "Testing..." : "Test Cloned Voice"}
+                                                        </button>
+                                                        {voiceStatus && <span className="text-xs text-neutral-400">{voiceStatus}</span>}
+                                                    </div>
+
+                                                    <div className="mt-5 border-t border-white/10 pt-4">
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <div className="text-xs uppercase tracking-wider text-neutral-500 font-bold">Saved Voice Personalities</div>
+                                                            <button
+                                                                onClick={() => fetchVoiceProfiles()}
+                                                                className="text-[11px] text-blue-400 hover:text-blue-300"
+                                                            >
+                                                                Refresh
+                                                            </button>
+                                                        </div>
+
+                                                        {voicesLoading ? (
+                                                            <div className="text-xs text-neutral-500">Loading voices...</div>
+                                                        ) : savedVoiceProfiles.length === 0 ? (
+                                                            <div className="text-xs text-neutral-500">No saved custom voices yet.</div>
+                                                        ) : (
+                                                            <div className="space-y-2">
+                                                                {savedVoiceProfiles.map((voice) => (
+                                                                    <div key={voice.id} className="p-3 rounded-xl border border-white/10 bg-black/30 flex items-center justify-between gap-3">
+                                                                        <div>
+                                                                            <div className="text-sm text-white font-semibold">
+                                                                                {voice.name} {voice.is_default ? <span className="text-[10px] text-emerald-400 ml-1">(Default)</span> : null}
+                                                                            </div>
+                                                                            <div className="text-xs text-neutral-400">{voice.personality || "professional"}</div>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-2">
+                                                                            {!voice.is_default && (
+                                                                                <button
+                                                                                    onClick={() => setDefaultVoiceProfile(voice.id)}
+                                                                                    className="px-2 py-1 rounded-lg bg-blue-600/20 border border-blue-500/40 text-[11px] text-blue-300 hover:bg-blue-600/30"
+                                                                                >
+                                                                                    Set Default
+                                                                                </button>
+                                                                            )}
+                                                                            <button
+                                                                                onClick={() => deleteVoiceProfile(voice.id)}
+                                                                                className="px-2 py-1 rounded-lg bg-red-600/20 border border-red-500/40 text-[11px] text-red-300 hover:bg-red-600/30"
+                                                                            >
+                                                                                Delete
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
 
                                             </div>
@@ -492,16 +914,61 @@ export default function Profile() {
                                         <div className="bg-[#0A0A0A]/60 backdrop-blur-xl border border-white/5 rounded-3xl p-6 md:p-8 space-y-6 shadow-xl">
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                 <ModernInput label="Company Name" name="company" value={formData.company} onChange={handleChange} placeholder="e.g. Spacerocket" icon={Building} />
-                                                <ModernInput label="Website" name="website" value={formData.website} onChange={handleChange} placeholder="https://..." icon={Globe} />
+                                                <ModernInput
+                                                    label="Website"
+                                                    name="website"
+                                                    value={formData.website}
+                                                    onChange={handleChange}
+                                                    onBlur={(e) => scrapeProfileFromLink("website", e.target.value)}
+                                                    loading={!!scrapingFields.website}
+                                                    placeholder="https://..."
+                                                    icon={Globe}
+                                                />
                                             </div>
 
                                             <div className="pt-6 border-t border-white/5">
                                                 <label className="block text-xs font-bold text-neutral-500 uppercase tracking-wider mb-5">Social Presence</label>
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                    <SocialInput label="LinkedIn" name="social_linkedin" value={formData.socials.linkedin} onChange={handleChange} icon={Linkedin} color="group-hover:text-[#0077b5]" />
-                                                    <SocialInput label="Twitter" name="social_twitter" value={formData.socials.twitter} onChange={handleChange} icon={Twitter} color="group-hover:text-[#1DA1F2]" />
-                                                    <SocialInput label="GitHub" name="social_github" value={formData.socials.github} onChange={handleChange} icon={Github} color="group-hover:text-white" />
-                                                    <SocialInput label="Instagram" name="social_instagram" value={formData.socials.instagram} onChange={handleChange} icon={Instagram} color="group-hover:text-[#E1306C]" />
+                                                    <SocialInput
+                                                        label="LinkedIn"
+                                                        name="social_linkedin"
+                                                        value={formData.socials.linkedin}
+                                                        onChange={handleChange}
+                                                        onBlur={(e) => scrapeProfileFromLink("social_linkedin", e.target.value)}
+                                                        loading={!!scrapingFields.social_linkedin}
+                                                        icon={Linkedin}
+                                                        color="group-hover:text-[#0077b5]"
+                                                    />
+                                                    <SocialInput
+                                                        label="Twitter"
+                                                        name="social_twitter"
+                                                        value={formData.socials.twitter}
+                                                        onChange={handleChange}
+                                                        onBlur={(e) => scrapeProfileFromLink("social_twitter", e.target.value)}
+                                                        loading={!!scrapingFields.social_twitter}
+                                                        icon={Twitter}
+                                                        color="group-hover:text-[#1DA1F2]"
+                                                    />
+                                                    <SocialInput
+                                                        label="GitHub"
+                                                        name="social_github"
+                                                        value={formData.socials.github}
+                                                        onChange={handleChange}
+                                                        onBlur={(e) => scrapeProfileFromLink("social_github", e.target.value)}
+                                                        loading={!!scrapingFields.social_github}
+                                                        icon={Github}
+                                                        color="group-hover:text-white"
+                                                    />
+                                                    <SocialInput
+                                                        label="Instagram"
+                                                        name="social_instagram"
+                                                        value={formData.socials.instagram}
+                                                        onChange={handleChange}
+                                                        onBlur={(e) => scrapeProfileFromLink("social_instagram", e.target.value)}
+                                                        loading={!!scrapingFields.social_instagram}
+                                                        icon={Instagram}
+                                                        color="group-hover:text-[#E1306C]"
+                                                    />
                                                 </div>
                                             </div>
                                         </div>
@@ -531,7 +998,7 @@ export default function Profile() {
 
 // --- Modern Components ---
 
-const ModernInput = ({ label, name, value, onChange, placeholder, icon: Icon }) => (
+const ModernInput = ({ label, name, value, onChange, onBlur, loading, placeholder, icon: Icon }) => (
     <div className="relative group">
         <label className="block text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-2 ml-1 group-focus-within:text-blue-500 transition-colors">
             {label}
@@ -547,14 +1014,20 @@ const ModernInput = ({ label, name, value, onChange, placeholder, icon: Icon }) 
                 name={name}
                 value={value}
                 onChange={onChange}
+                onBlur={onBlur}
                 placeholder={placeholder}
-                className={`w-full bg-[#0F0F0F] border border-white/10 rounded-2xl py-3.5 text-sm text-white focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all placeholder-neutral-700 hover:bg-[#141414] hover:border-white/20 ${Icon ? 'pl-11 pr-4' : 'px-4'}`}
+                className={`w-full bg-[#0F0F0F] border border-white/10 rounded-2xl py-3.5 text-sm text-white focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all placeholder-neutral-700 hover:bg-[#141414] hover:border-white/20 ${Icon ? 'pl-11 pr-10' : 'px-4'}`}
             />
+            {loading && (
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                    <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+                </div>
+            )}
         </div>
     </div>
 );
 
-const SocialInput = ({ label, name, value, onChange, icon: Icon, color }) => (
+const SocialInput = ({ label, name, value, onChange, onBlur, loading, icon: Icon, color }) => (
     <div className="flex items-center gap-3 group p-1.5 rounded-2xl transition-all duration-300 focus-within:bg-white/[0.02] hover:bg-white/[0.02] border border-transparent focus-within:border-white/5">
         <div className={`p-3 rounded-xl bg-[#0F0F0F] border border-white/5 text-neutral-500 ${color} transition-colors group-hover:scale-105 shadow-sm`}>
             <Icon className="w-4 h-4" />
@@ -565,9 +1038,15 @@ const SocialInput = ({ label, name, value, onChange, icon: Icon, color }) => (
                 name={name}
                 value={value}
                 onChange={onChange}
+                onBlur={onBlur}
                 placeholder={`${label} URL...`}
-                className="w-full bg-transparent border-none py-2 text-sm text-neutral-300 focus:text-white focus:outline-none transition-all placeholder-neutral-700 focus:ring-0"
+                className="w-full bg-transparent border-none py-2 pr-7 text-sm text-neutral-300 focus:text-white focus:outline-none transition-all placeholder-neutral-700 focus:ring-0"
             />
+            {loading && (
+                <div className="absolute right-0 top-1/2 -translate-y-1/2 pr-1">
+                    <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />
+                </div>
+            )}
         </div>
     </div>
 );
