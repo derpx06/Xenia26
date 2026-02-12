@@ -9,20 +9,8 @@ from langchain_core.tools import tool
 import warnings
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=RuntimeWarning, message="This package")
-    from duckduckgo_search import DDGS
+from duckduckgo_search import DDGS
 from loguru import logger
-from ml.application.crawlers.dispatcher import CrawlerDispatcher
-from ml.application.crawlers.linkedin import LinkedInCrawler
-from ml.application.crawlers.github import GithubProfileCrawler
-from ml.application.crawlers.medium import MediumCrawler
-from ml.application.crawlers.custom_article import CustomArticleCrawler
-from ml.domain.documents import UserDocument
-try:
-    from ml.application.crawlers.twitter import TwitterProfileCrawler
-    TWITTER_AVAILABLE = True
-except ImportError:
-    TWITTER_AVAILABLE = False
-    logger.warning("TwitterProfileCrawler not available (twikit not installed)")
 
 
 @tool
@@ -77,19 +65,18 @@ async def scrape_article(url: Annotated[str, "The URL of the article/profile to 
     import asyncio
     
     try:
+        from ml.application.crawlers.linkedin import LinkedInCrawler
+        from ml.application.crawlers.github import GithubProfileCrawler
+        from ml.application.crawlers.custom_article import CustomArticleCrawler
+
         parsed = urlparse(url)
         domain = parsed.netloc.lower().replace('www.', '')
-        
-        # Create dummy user for crawlers
-        dummy_user = UserDocument(first_name="Agent", last_name="User")
-        
-        
-        
+
         # LinkedIn
         if 'linkedin.com' in domain and '/in/' in parsed.path.lower():
             logger.info("Using LinkedInCrawler")
             crawler = LinkedInCrawler()
-            content = await crawler.aextract(link=url, user=dummy_user)
+            content = await crawler.aextract(link=url)
             if content:
                 return format_linkedin_data(content)
             return f"✅ LinkedIn profile scraped successfully"
@@ -101,7 +88,7 @@ async def scrape_article(url: Annotated[str, "The URL of the article/profile to 
                 username = match.group(1)
                 logger.info(f"Using GithubProfileCrawler for {username}")
                 crawler = GithubProfileCrawler(top_repo_limit=5)
-                content = await crawler.aextract(link=username, user=dummy_user)
+                content = await crawler.aextract(link=username)
                 if content:
                     return format_github_data(content)
                 return f"✅ GitHub profile {username} scraped successfully"
@@ -109,7 +96,7 @@ async def scrape_article(url: Annotated[str, "The URL of the article/profile to 
         # Fallback: CustomArticleCrawler
         logger.info("Using CustomArticleCrawler")
         crawler = CustomArticleCrawler()
-        content = await crawler.aextract(link=url, user=dummy_user)
+        content = await crawler.aextract(link=url)
         if content:
             return format_article_data(content)
         return f"✅ Article scraped successfully from {url}"

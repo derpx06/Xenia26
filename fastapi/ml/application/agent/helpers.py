@@ -2,6 +2,7 @@ import hashlib
 import re
 import time
 import json
+from difflib import SequenceMatcher
 from typing import Optional, Any, List, Dict
 
 import instructor
@@ -9,7 +10,13 @@ import openai
 from langchain_ollama import ChatOllama
 from loguru import logger
 
-from .schemas import ProspectProfile, PsychProfile, StrategyBrief, CritiqueResult
+from .schemas import (
+    ProspectProfile,
+    PsychProfile,
+    StrategyBrief,
+    CritiqueResult,
+    ContextInjection,
+)
 from .config import LOGIC_MODEL, CREATIVE_MODEL
 
 
@@ -89,23 +96,72 @@ def init_llm_clients():
     return llm_client, llm_creative, llm_fast
 
 
+def _normalized_tokens(text: str) -> List[str]:
+    cleaned = re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).strip()
+    return [tok for tok in cleaned.split() if tok]
+
+
+def _fuzzy_token_match(tokens: List[str], variants: List[str], threshold: float = 0.82) -> bool:
+    if not tokens:
+        return False
+    for token in tokens:
+        for variant in variants:
+            if token == variant:
+                return True
+            # quick length guard keeps matching fast
+            if abs(len(token) - len(variant)) > 3:
+                continue
+            if SequenceMatcher(None, token, variant).ratio() >= threshold:
+                return True
+    return False
+
+
 def infer_channels_from_instruction(instruction: str) -> List[str]:
     instruction_lc = (instruction or "").lower()
+    tokens = _normalized_tokens(instruction_lc)
     channels = []
-    if "email" in instruction_lc or "cold email" in instruction_lc:
+
+    has_email = _fuzzy_token_match(tokens, ["email", "emial", "emaill", "eamil"], threshold=0.8)
+    has_linkedin = _fuzzy_token_match(tokens, ["linkedin", "linkedina", "linkdin", "linkden"], threshold=0.78)
+    has_post = _fuzzy_token_match(tokens, ["post", "article", "update"], threshold=0.82)
+    has_dm = _fuzzy_token_match(tokens, ["dm", "message", "inmail", "msg"], threshold=0.8)
+    has_whatsapp = (
+        _fuzzy_token_match(tokens, ["whatsapp", "watsapp", "whatapp", "whatappa", "whatsap"], threshold=0.76)
+        or ("whats" in tokens and "app" in tokens)
+    )
+    has_sms = (
+        _fuzzy_token_match(tokens, ["sms", "text", "txt"], threshold=0.8)
+        or ("text" in tokens and _fuzzy_token_match(tokens, ["message", "msg"], threshold=0.8))
+    )
+    has_instagram = _fuzzy_token_match(tokens, ["instagram", "insta", "ig"], threshold=0.8)
+    has_twitter = _fuzzy_token_match(tokens, ["twitter", "twiter", "tweet"], threshold=0.8)
+    has_thread = _fuzzy_token_match(tokens, ["thread", "threads"], threshold=0.82)
+    has_report = _fuzzy_token_match(tokens, ["report", "analysis", "summary", "research"], threshold=0.82)
+
+    if has_email or "cold email" in instruction_lc:
         channels.append("email")
-    if "linkedin" in instruction_lc and ("dm" in instruction_lc or "message" in instruction_lc or "inmail" in instruction_lc):
-        channels.append("linkedin_dm")
-    if "linkedin" in instruction_lc and "post" in instruction_lc:
-        channels.append("linkedin_post")
-    if "whatsapp" in instruction_lc or "whats app" in instruction_lc:
+
+    if has_linkedin:
+        # Default LinkedIn mention to DM unless explicitly post-only intent.
+        if has_dm or not has_post:
+            channels.append("linkedin_dm")
+        if has_post:
+            channels.append("linkedin_post")
+
+    if has_whatsapp or "whats app" in instruction_lc:
         channels.append("whatsapp")
-    if "sms" in instruction_lc or "text message" in instruction_lc:
+
+    if has_sms or "text message" in instruction_lc:
         channels.append("sms")
-    if "instagram" in instruction_lc or "ig dm" in instruction_lc:
+
+    if has_instagram or "ig dm" in instruction_lc:
         channels.append("instagram_dm")
-    if "twitter" in instruction_lc or "x thread" in instruction_lc:
+
+    if has_twitter or ("x" in tokens and has_thread) or "x thread" in instruction_lc:
         channels.append("twitter_thread")
+
+    if has_report or "research report" in instruction_lc:
+        channels.append("research_report")
     
     # Generic outreach intent? Suggest email + linkedin_dm + whatsapp as smart defaults
     # Broadened scope: any "write/draft" intent should trigger at least email/linkedin/whatsapp
@@ -113,7 +169,7 @@ def infer_channels_from_instruction(instruction: str) -> List[str]:
         "reach out", "contact", "message", "write", "draft", "create", 
         "generate", "compose", "send", "outreach"
     ]):
-        channels.extend(["email", "whatsapp"])
+        channels.extend(["email", "linkedin_dm", "whatsapp"])
 
     return list(dict.fromkeys(channels))
 
@@ -356,6 +412,14 @@ def ensure_critique(value: Any) -> CritiqueResult:
         return value
     if isinstance(value, dict):
         return CritiqueResult(**value)
+    return value
+
+
+def ensure_context(value: Any) -> ContextInjection:
+    if isinstance(value, ContextInjection):
+        return value
+    if isinstance(value, dict):
+        return ContextInjection(**value)
     return value
 
 

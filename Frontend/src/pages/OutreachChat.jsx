@@ -325,12 +325,17 @@ export default function OutreachChat() {
     setMessages(prev => [...prev, initialAssistantMsg]);
 
     try {
+      const userEmail = localStorage.getItem("userEmail") || "";
       const response = await fetch(`${API_BASE_URL}/ml/agent/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-email": userEmail
+        },
         body: JSON.stringify({
           model: "qwen2.5:7b",
           message: originalInput,
+          user_email: userEmail,
           thread_id: assistantMsgId,
           conversation_history: messages.map(m => ({
             role: m.role,

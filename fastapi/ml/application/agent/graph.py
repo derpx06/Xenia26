@@ -13,7 +13,7 @@ from langsmith import traceable
 
 from .schemas import AgentState
 from .nodes import (
-    hunter_node, profiler_node, strategist_node,
+    mention_context_node, hunter_node, profiler_node, strategist_node,
     scribe_node, critic_node
 )
 from .supervisor import supervisor_node
@@ -45,7 +45,7 @@ def route_intent(state: AgentState) -> str:
     category = _state_get(state, "intent_category")
     if category in ("small_talk", "system_question"):
         return "direct_response"
-    return "supervisor"
+    return "mention_context"
 
 
 def direct_response_node(state: AgentState) -> dict:
@@ -95,6 +95,7 @@ def create_agent_graph():
     # --- Intent Router (NEW: first node) ---
     workflow.add_node("intent_router", intent_router_node)
     workflow.add_node("direct_response", direct_response_node)
+    workflow.add_node("mention_context", mention_context_node)
 
     # --- Existing nodes ---
     workflow.add_node("supervisor", supervisor_node)
@@ -114,10 +115,11 @@ def create_agent_graph():
         route_intent,
         {
             "direct_response": "direct_response",
-            "supervisor": "supervisor",
+            "mention_context": "mention_context",
         }
     )
     workflow.add_edge("direct_response", END)
+    workflow.add_edge("mention_context", "supervisor")
 
     # Supervisor routes to worker nodes
     workflow.add_conditional_edges(
@@ -156,6 +158,7 @@ def create_agent_graph():
 async def run_agent(
     target_url: str = None,
     user_instruction: str = "Introduce yourself",
+    user_email: str = None,
     conversation_history: List[Dict[str, str]] = None,
     **kwargs
 ) -> Dict[str, Any]:
@@ -164,6 +167,7 @@ async def run_agent(
     initial_state = {
         "target_url": target_url,
         "user_instruction": user_instruction,
+        "user_email": user_email,
         "drafts": {},
         "revision_count": 0,
         "logs": [],
@@ -178,6 +182,7 @@ async def run_agent(
 async def stream_agent(
     user_instruction: str,
     target_url: str = None,
+    user_email: str = None,
     conversation_history: List[Dict[str, str]] = None,
     **kwargs
 ) -> AsyncGenerator[Dict[str, Any], None]:
@@ -186,6 +191,7 @@ async def stream_agent(
     initial_state = {
         "target_url": target_url,
         "user_instruction": user_instruction,
+        "user_email": user_email,
         "drafts": {},
         "revision_count": 0,
         "logs": [],
@@ -212,6 +218,7 @@ async def stream_agent(
             "topic_lock": _state_get(state_update, "topic_lock"),
             "needs_search": _state_get(state_update, "needs_search"),
             "direct_response": _state_get(state_update, "direct_response"),
+            "context": _state_get(state_update, "context"),
             "prospect": _state_get(state_update, "prospect"),
             "psych": _state_get(state_update, "psych"),
             "strategy": _state_get(state_update, "strategy"),
@@ -222,6 +229,7 @@ async def stream_agent(
 async def stream_agent_events(
     target_url: str,
     user_instruction: str,
+    user_email: str = None,
     conversation_history: List[Dict[str, str]] = None,
     **kwargs
 ) -> AsyncGenerator[Any, None]:
@@ -230,6 +238,7 @@ async def stream_agent_events(
     initial_state = {
         "target_url": target_url,
         "user_instruction": user_instruction,
+        "user_email": user_email,
         "drafts": {},
         "revision_count": 0,
         "logs": [],

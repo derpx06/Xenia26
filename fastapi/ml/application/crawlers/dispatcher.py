@@ -1,13 +1,10 @@
 import re
 from urllib.parse import urlparse
+from typing import Any
 
 from loguru import logger
 
 from .base import BaseCrawler
-from .custom_article import CustomArticleCrawler
-from .github import GithubCrawler
-from .linkedin import LinkedInCrawler
-from .medium import MediumCrawler
 
 
 class CrawlerDispatcher:
@@ -21,17 +18,29 @@ class CrawlerDispatcher:
         return dispatcher
 
     def register_medium(self) -> "CrawlerDispatcher":
-        self.register("https://medium.com", MediumCrawler)
+        try:
+            from .medium import MediumCrawler
+            self.register("https://medium.com", MediumCrawler)
+        except Exception as e:
+            logger.warning(f"Medium crawler unavailable: {e}")
 
         return self
 
     def register_linkedin(self) -> "CrawlerDispatcher":
-        self.register("https://linkedin.com", LinkedInCrawler)
+        try:
+            from .linkedin import LinkedInCrawler
+            self.register("https://linkedin.com", LinkedInCrawler)
+        except Exception as e:
+            logger.warning(f"LinkedIn crawler unavailable: {e}")
 
         return self
 
     def register_github(self) -> "CrawlerDispatcher":
-        self.register("https://github.com", GithubCrawler)
+        try:
+            from .github import GithubCrawler
+            self.register("https://github.com", GithubCrawler)
+        except Exception as e:
+            logger.warning(f"GitHub crawler unavailable: {e}")
 
         return self
 
@@ -65,6 +74,7 @@ class CrawlerDispatcher:
         
         if not crawler_instance:
             logger.warning(f"No crawler found for {url}. Defaulting to CustomArticleCrawler.")
+            from .custom_article import CustomArticleCrawler
             crawler_instance = CustomArticleCrawler()
             
         # Wrap the crawler to save to cache after extraction

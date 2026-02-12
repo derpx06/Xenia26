@@ -52,10 +52,49 @@ class CritiqueResult(BaseModel):
     feedback: str
     passed: bool
 
+
+class MentionTargetProfile(BaseModel):
+    name: str = ""
+    role: str = ""
+    company: str = ""
+    industry: str = ""
+    seniority: str = ""
+    tone: str = "professional"
+    language_style: str = "clear"
+    interests: List[str] = Field(default_factory=list)
+    psych_traits: List[str] = Field(default_factory=list)
+    recent_focus_summary: str = ""
+
+
+class MentionSenderProfile(BaseModel):
+    name: str = ""
+    role: str = ""
+    company: str = ""
+    credibility_points: List[str] = Field(default_factory=list)
+    value_proposition: str = ""
+    tone_preference: str = "professional"
+
+
+class MentionTaskIntent(BaseModel):
+    intent_type: str = "outreach"
+    topic_lock: str = ""
+    channel_hint: str = "email"
+
+
+class ContextInjection(BaseModel):
+    target_profile: MentionTargetProfile = Field(default_factory=MentionTargetProfile)
+    sender_profile: MentionSenderProfile = Field(default_factory=MentionSenderProfile)
+    task_intent: MentionTaskIntent = Field(default_factory=MentionTaskIntent)
+    mention_tokens: List[str] = Field(default_factory=list)
+    compressed_memory: str = ""
+    extraction_ms: int = 0
+
+
 class AgentState(BaseModel):
     # Inputs
     target_url: Optional[str] = None
     user_instruction: str # CHANGED: Replaces 'user_offer' to be more generic
+    user_email: Optional[str] = None
     conversation_history: List[Dict[str, Any]] = Field(default_factory=list) # List of messages
     
     # Internal Memory
@@ -65,6 +104,7 @@ class AgentState(BaseModel):
     
     # Drafting
     drafts: Dict[str, str] = Field(default_factory=dict) # Keyed by channel
+    last_generated_channels: List[str] = Field(default_factory=list)
     latest_critique: Optional[CritiqueResult] = None
     channel_critiques: Dict[str, CritiqueResult] = Field(default_factory=dict) # NEW: Per-channel critiques
     revision_count: int = 0
@@ -78,7 +118,8 @@ class AgentState(BaseModel):
     search_keywords: List[str] = Field(default_factory=list)  # Domain-only keywords for search
     needs_search: bool = True              # Whether search was determined necessary
     direct_response: Optional[str] = None  # For small_talk/system_question bypass
-    
+    context: Optional[ContextInjection] = None
+
     # Final Output
     final_output: Optional[Dict[str, str]] = None # Keyed by channel
     logs: List[str] = Field(default_factory=list)
@@ -104,6 +145,10 @@ class AgentRequest(BaseModel):
     """Request schema for agent chat endpoint."""
     message: str = Field(..., description="User's message/instruction")
     model: str = Field(default=settings.LLM_MODEL, description="Ollama model to use")
+    user_email: Optional[str] = Field(
+        default=None,
+        description="Authenticated sender email for @mention context lookup"
+    )
     conversation_history: List[Message] = Field(
         default_factory=list,
         description="Previous conversation messages"

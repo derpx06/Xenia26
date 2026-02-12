@@ -1,23 +1,16 @@
 from urllib.parse import urlparse
 from loguru import logger
 
-from ml.domain.documents import ArticleDocument
 from .base import BaseCrawler
 
 
 class CustomArticleCrawler(BaseCrawler):
-    model = ArticleDocument
+    model = None
 
     def __init__(self) -> None:
         super().__init__()
 
     async def aextract(self, link: str, **kwargs) -> dict | None:
-        # Check if article exists in DB
-        old_model = self.model.find(link=link)
-        if old_model is not None:
-            logger.info(f"Article already exists in the database: {link}")
-            return old_model.content
-
         logger.info(f"Starting scraping article with Crawl4AI: {link}")
 
         try:

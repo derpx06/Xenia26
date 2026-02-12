@@ -1,6 +1,7 @@
 from typing import Literal
 from loguru import logger
 from .schemas import AgentState
+from .helpers import ensure_context
 
 def supervisor_node(state: AgentState) -> AgentState:
     """
@@ -31,7 +32,10 @@ def supervisor_node(state: AgentState) -> AgentState:
         return {"next_step": "scribe"}
 
     if critique and not critique.passed:
-        if state.revision_count > 3:
+        context = ensure_context(getattr(state, "context", None))
+        has_mention_context = bool(context and context.mention_tokens)
+        max_revisions = 2 if has_mention_context else 3
+        if state.revision_count >= max_revisions:
             logger.warning("SUPERVISOR: Max revisions reached. Forcing END.")
             return {"next_step": "end"}
         return {"next_step": "scribe"}

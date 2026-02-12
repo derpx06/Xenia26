@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import json
@@ -12,15 +12,11 @@ from ml.application.agent.streaming import stream_agent_response
 from ml.application.agent.graph import run_agent
 from ml.infrastructure.db.sqlite import get_thread_history, add_message, create_thread, get_all_threads
 
-SARGE_AVAILABLE = True
-SARGE_IMPORT_ERROR = None
-try:
-    from ml.application.sarge.graph import run_sarge, stream_sarge
-    from ml.application.sarge.nodes import get_tts
-except Exception as e:
-    # Allow main app to start without optional SARGE/TTS dependencies
-    SARGE_AVAILABLE = False
-    SARGE_IMPORT_ERROR = str(e)
+SARGE_AVAILABLE = False
+SARGE_IMPORT_ERROR = "SARGE not initialized"
+run_sarge = None
+stream_sarge = None
+get_tts = None
 import uuid
 import os
 import asyncio
@@ -28,6 +24,35 @@ import asyncio
 router = APIRouter(prefix="/ml", tags=["ML"])
 VOICE_PROFILES_DIR = Path("assets/voice_profiles")
 VOICE_REGISTRY_PATH = VOICE_PROFILES_DIR / "profiles.json"
+
+
+def _ensure_sarge_loaded() -> bool:
+    """
+    Lazy-load SARGE modules so optional TTS deps cannot break core app startup.
+    """
+    global SARGE_AVAILABLE, SARGE_IMPORT_ERROR, run_sarge, stream_sarge, get_tts
+
+    if SARGE_AVAILABLE and run_sarge and stream_sarge and get_tts:
+        return True
+
+    if os.getenv("DISABLE_SARGE", "false").lower() == "true":
+        SARGE_AVAILABLE = False
+        SARGE_IMPORT_ERROR = "SARGE disabled by DISABLE_SARGE=true"
+        return False
+
+    try:
+        from ml.application.sarge.graph import run_sarge as _run_sarge, stream_sarge as _stream_sarge
+        from ml.application.sarge.nodes import get_tts as _get_tts
+        run_sarge = _run_sarge
+        stream_sarge = _stream_sarge
+        get_tts = _get_tts
+        SARGE_AVAILABLE = True
+        SARGE_IMPORT_ERROR = None
+        return True
+    except Exception as e:
+        SARGE_AVAILABLE = False
+        SARGE_IMPORT_ERROR = str(e)
+        return False
 
 
 def _safe_email_key(email: str) -> str:
@@ -367,7 +392,7 @@ async def scrape_links(request: LinkScrapeRequest):
 
 
 @router.post("/agent/chat", response_class=StreamingResponse)
-async def agent_chat_stream(request: AgentRequest):
+async def agent_chat_stream(request: AgentRequest, http_request: Request):
     """
     Stream agent responses with tool calling capabilities.
     
@@ -425,6 +450,12 @@ async def agent_chat_stream(request: AgentRequest):
                 }
             )
 
+        sender_email = (
+            request.user_email
+            or http_request.headers.get("x-user-email")
+            or ""
+        ).strip().lower() or None
+
         # 1. Handle Thread ID
         thread_id = request.thread_id or str(uuid.uuid4())
         
@@ -458,6 +489,7 @@ async def agent_chat_stream(request: AgentRequest):
             async for chunk in stream_agent_response(
                 message=request.message,
                 model=request.model,
+                user_email=sender_email,
                 conversation_history=history_dicts,
                 max_iterations=request.max_iterations
             ):
@@ -501,7 +533,7 @@ async def agent_chat_stream(request: AgentRequest):
 
 
 @router.post("/agent/chat-sync", response_model=AgentResponse)
-async def agent_chat_sync(request: AgentRequest):
+async def agent_chat_sync(request: AgentRequest, http_request: Request):
     """
     Synchronous agent chat without streaming.
     
@@ -541,9 +573,16 @@ async def agent_chat_sync(request: AgentRequest):
             target_url = None
             user_instruction = request.message
 
+        sender_email = (
+            request.user_email
+            or http_request.headers.get("x-user-email")
+            or ""
+        ).strip().lower() or None
+
         result = await run_agent(
             target_url=target_url,
-            user_instruction=user_instruction
+            user_instruction=user_instruction,
+            user_email=sender_email
         )
         
         # Extract tool calls from messages
@@ -622,7 +661,7 @@ async def sarge_chat_stream(request: AgentRequest):
     - result: Final generated content
     - token: Real-time LLM token streaming
     """
-    if not SARGE_AVAILABLE:
+    if not _ensure_sarge_loaded():
         raise HTTPException(status_code=503, detail=f"SARGE unavailable: {SARGE_IMPORT_ERROR}")
     session_id = request.thread_id or str(uuid.uuid4())
     
@@ -657,7 +696,7 @@ async def sarge_chat_sync(request: AgentRequest):
     Synchronous SARGE agent chat.
     Uses the new SARGE graph with persistence and upgrades.
     """
-    if not SARGE_AVAILABLE:
+    if not _ensure_sarge_loaded():
         raise HTTPException(status_code=503, detail=f"SARGE unavailable: {SARGE_IMPORT_ERROR}")
     try:
         session_id = request.thread_id or str(uuid.uuid4())
@@ -684,7 +723,7 @@ async def sarge_chat_sync(request: AgentRequest):
 @router.get("/agent/sarge/voices")
 async def get_sarge_voices(email: Optional[str] = None):
     """List built-in default voices and saved cloned voice profiles."""
-    if not SARGE_AVAILABLE:
+    if not _ensure_sarge_loaded():
         raise HTTPException(status_code=503, detail=f"SARGE unavailable: {SARGE_IMPORT_ERROR}")
     try:
         tts_engine = await asyncio.to_thread(get_tts)
@@ -759,7 +798,7 @@ async def sarge_voice(request: SargeVoiceRequest):
     """
     Generate audio for a given text with either default model voices or saved custom clones.
     """
-    if not SARGE_AVAILABLE:
+    if not _ensure_sarge_loaded():
         raise HTTPException(status_code=503, detail=f"SARGE unavailable: {SARGE_IMPORT_ERROR}")
 
     text = request.text
@@ -833,6 +872,9 @@ async def upload_sarge_voice_profile(request: VoiceProfileUploadRequest):
         raise HTTPException(status_code=400, detail="Email is required")
     if not request.audio_base64:
         raise HTTPException(status_code=400, detail="Audio payload is required")
+
+    if not _ensure_sarge_loaded():
+        raise HTTPException(status_code=503, detail=f"SARGE unavailable: {SARGE_IMPORT_ERROR}")
 
     try:
         content = base64.b64decode(request.audio_base64)

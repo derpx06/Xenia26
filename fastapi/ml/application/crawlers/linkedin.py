@@ -8,7 +8,6 @@ from loguru import logger
 
 from linkedin_api import Linkedin
 
-from ml.domain.documents import PostDocument
 from ml.domain.exceptions import ImproperlyConfigured
 from ml.settings import settings
 from .base import BaseCrawler
@@ -23,7 +22,7 @@ class LinkedInCrawler(BaseCrawler):
     - Optional LINKEDIN_JSESSIONID
     """
 
-    model = PostDocument
+    model = None
 
     def __init__(
         self,

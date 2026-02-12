@@ -30,6 +30,7 @@ def _state_get(state, key, default=None):
 async def stream_agent_response(
     message: str,
     model: str = settings.LLM_MODEL,
+    user_email: str = None,
     conversation_history: list = None,
     max_iterations: int = 10
 ) -> AsyncGenerator[str, None]:
@@ -69,6 +70,7 @@ async def stream_agent_response(
         async for state_update in stream_agent(
             user_instruction=user_instruction,
             target_url=target_url,
+            user_email=user_email,
             conversation_history=conversation_history
         ):
             node_name = _state_get(state_update, "node")

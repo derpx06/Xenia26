@@ -2,23 +2,27 @@ import time
 from abc import ABC, abstractmethod
 from tempfile import mkdtemp
 
-import chromedriver_autoinstaller
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+_chromedriver_ready = False
 
-from ml.domain.documents import NoSQLBaseDocument
 
-# Check if the current version of chromedriver exists
-# and if it doesn't exist, download it automatically,
-# then add chromedriver to path
-try:
-    chromedriver_autoinstaller.install()
-except Exception as e:
-    print(f"Warning: Failed to install chromedriver: {e}")
+def _ensure_chromedriver() -> None:
+    """
+    Lazily install/resolve chromedriver.
+    Running this at import-time can destabilize app startup in some environments.
+    """
+    global _chromedriver_ready
+    if _chromedriver_ready:
+        return
+    try:
+        import chromedriver_autoinstaller
+        chromedriver_autoinstaller.install()
+        _chromedriver_ready = True
+    except Exception as e:
+        print(f"Warning: Failed to install chromedriver: {e}")
 
 
 class BaseCrawler(ABC):
-    model: type[NoSQLBaseDocument]
+    model: object | None = None
 
     @abstractmethod
     def extract(self, link: str, **kwargs) -> None: ...
@@ -31,6 +35,8 @@ class BaseCrawler(ABC):
 
 class BaseSeleniumCrawler(BaseCrawler, ABC):
     def __init__(self, scroll_limit: int = 5) -> None:
+        _ensure_chromedriver()
+        from selenium import webdriver
         options = webdriver.ChromeOptions()
 
         options.add_argument("--no-sandbox")
@@ -50,11 +56,9 @@ class BaseSeleniumCrawler(BaseCrawler, ABC):
         self.set_extra_driver_options(options)
 
         self.scroll_limit = scroll_limit
-        self.driver = webdriver.Chrome(
-            options=options,
-        )
+        self.driver = webdriver.Chrome(options=options)
 
-    def set_extra_driver_options(self, options: Options) -> None:
+    def set_extra_driver_options(self, options) -> None:
         pass
 
     def login(self) -> None:

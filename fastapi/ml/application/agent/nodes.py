@@ -5,8 +5,6 @@ from loguru import logger
 from langsmith import traceable
 
 from .schemas import AgentState, ProspectProfile, PsychProfile, StrategyBrief, CritiqueResult
-from .knowledge import SimpleKnowledgeBase
-from ..crawlers.dispatcher import CrawlerDispatcher
 from .tools import duckduckgo_search
 from .config import (
     LOGIC_MODEL,
@@ -29,10 +27,99 @@ from .helpers import (
     ensure_psych,
     ensure_strategy,
     ensure_critique,
+    ensure_context,
     parse_multi_channel,
 )
+from .mention_intelligence import build_context_injection, context_to_prospect, context_to_psych
 
-kb = SimpleKnowledgeBase()
+
+class _NullKnowledgeBase:
+    def save_prospect(self, prospect):  # noqa: D401
+        return None
+
+    def get_prospect(self, name, company):
+        return None
+
+    def save_psych_profile(self, name, company, profile):
+        return None
+
+    def get_psych_profile(self, name, company):
+        return None
+
+    def save_outreach(self, prospect, strategy, content):
+        return None
+
+    def get_similar_outreach(self, query_text, role=None, limit=3):
+        return []
+
+
+_kb_instance = None
+
+
+def _get_kb():
+    global _kb_instance
+    if _kb_instance is not None:
+        return _kb_instance
+    try:
+        from .knowledge import SimpleKnowledgeBase
+        _kb_instance = SimpleKnowledgeBase()
+    except Exception as e:
+        logger.warning(f"KB disabled due to init error: {e}")
+        _kb_instance = _NullKnowledgeBase()
+    return _kb_instance
+
+
+@traceable(name="Mention Context Node")
+async def mention_context_node(state: AgentState) -> AgentState:
+    """
+    Pre-agent @mention intelligence layer.
+    Extracts structured target/sender/task context in parallel and injects compact memory.
+    """
+    logs = state.logs
+    instruction = state.user_instruction or ""
+    sender_email = (getattr(state, "user_email", None) or "").strip().lower()
+    topic_lock_hint = getattr(state, "topic_lock", None)
+
+    try:
+        context = await build_context_injection(
+            user_instruction=instruction,
+            user_email=sender_email,
+            topic_lock_hint=topic_lock_hint,
+        )
+
+        updates = {
+            "context": context,
+            "logs": logs + [
+                f"MENTION: Parsed {len(context.mention_tokens)} mention(s); context built in {context.extraction_ms}ms.",
+                f"MENTION: Topic lock -> {context.task_intent.topic_lock or 'outreach'}",
+            ],
+        }
+
+        # Keep a strict task lock for downstream strategy + critic.
+        if context.task_intent.topic_lock:
+            updates["topic_lock"] = context.task_intent.topic_lock
+
+        # Seed prospect/psych to skip expensive extraction when structured contact data exists.
+        seeded_prospect = context_to_prospect(context)
+        if seeded_prospect and not state.prospect:
+            updates["prospect"] = seeded_prospect
+            updates["needs_search"] = False
+
+        seeded_psych = context_to_psych(context)
+        if seeded_psych and not state.psych:
+            updates["psych"] = seeded_psych
+
+        if context.extraction_ms > 150:
+            updates["logs"] = updates["logs"] + [
+                f"MENTION: Warning - extraction exceeded 150ms target ({context.extraction_ms}ms)."
+            ]
+
+        return updates
+    except Exception as e:
+        logger.warning(f"MENTION: context injection failed ({e})")
+        return {
+            "logs": logs + [f"MENTION: context injection failed ({str(e)[:120]})"],
+        }
 
 
 @traceable(name="Hunter Node")
@@ -47,7 +134,7 @@ async def hunter_node(state: AgentState) -> AgentState:
     structured = parse_structured_lead_data(instruction or "")
     if structured:
         structured.source_urls = []
-        kb.save_prospect(structured)
+        _get_kb().save_prospect(structured)
         logs.append(f"HUNTER: Parsed structured lead data for {structured.name}.")
         return {"prospect": structured, "logs": logs}
 
@@ -76,7 +163,7 @@ async def hunter_node(state: AgentState) -> AgentState:
             parsed = parse_profile_notes(notes_text)
             if parsed:
                 parsed.source_urls = source_urls
-                kb.save_prospect(parsed)
+                _get_kb().save_prospect(parsed)
                 logs.append(f"HUNTER: Parsed {parsed.name} from inline data.")
                 return {"prospect": parsed, "logs": logs}
             try:
@@ -97,7 +184,7 @@ async def hunter_node(state: AgentState) -> AgentState:
                 )
                 profile.seniority = infer_seniority_from_role(profile.role)
                 profile.source_urls = source_urls
-                kb.save_prospect(profile)
+                _get_kb().save_prospect(profile)
                 logs.append(f"HUNTER: Extracted {profile.name} from inline data.")
                 return {"prospect": profile, "logs": logs}
             except Exception as e:
@@ -181,6 +268,7 @@ async def hunter_node(state: AgentState) -> AgentState:
         combined_texts = []
         if notes_text:
             combined_texts.append(notes_text)
+        from ..crawlers.dispatcher import CrawlerDispatcher
         for src in source_urls:
             logs.append(f"HUNTER: Analyzing {src}...")
             dispatcher = CrawlerDispatcher.build().register_linkedin().register_medium().register_github()
@@ -219,7 +307,7 @@ async def hunter_node(state: AgentState) -> AgentState:
         profile.seniority = infer_seniority_from_role(profile.role)
         profile.source_urls = source_urls
 
-        kb.save_prospect(profile)
+        _get_kb().save_prospect(profile)
 
         logs.append(f"HUNTER: Found {profile.name} at {profile.company}. Saved to Knowledge Base.")
         return {"prospect": profile, "logs": logs}
@@ -258,7 +346,7 @@ async def profiler_node(state: AgentState) -> AgentState:
             "logs": logs
         }
 
-    cached = kb.get_psych_profile(prospect.name, prospect.company)
+    cached = _get_kb().get_psych_profile(prospect.name, prospect.company)
     if cached:
         logs.append("PROFILER: Found cached psych profile in KB.")
         return {"psych": PsychProfile(**cached), "logs": logs}
@@ -296,7 +384,7 @@ async def profiler_node(state: AgentState) -> AgentState:
                 emoji_usage="High" if style_signals["emoji_count"] > 2 else "Low" if style_signals["emoji_count"] > 0 else "None",
                 vocabulary_complexity="Simple" if style_signals["avg_sentence_len"] <= 12 else "Standard"
             )
-            kb.save_psych_profile(prospect.name, prospect.company, profile)
+            _get_kb().save_psych_profile(prospect.name, prospect.company, profile)
             logs.append(f"PROFILER: Used tone hint '{tone_hint}'.")
             return {"psych": profile, "logs": logs}
 
@@ -333,7 +421,7 @@ async def profiler_node(state: AgentState) -> AgentState:
                 emoji_usage="High" if style_signals["emoji_count"] > 2 else "Low" if style_signals["emoji_count"] > 0 else "None",
                 vocabulary_complexity="Simple" if style_signals["avg_sentence_len"] <= 12 else "Standard"
             )
-            kb.save_psych_profile(prospect.name, prospect.company, profile)
+            _get_kb().save_psych_profile(prospect.name, prospect.company, profile)
             logs.append("PROFILER: Used heuristic style (short source).")
             return {"psych": profile, "logs": logs}
 
@@ -375,7 +463,7 @@ Be concise and specific."""
                 heuristic_rules.append("Use casual, friendly tone")
             profile.style_rules = heuristic_rules[:3]
 
-        kb.save_psych_profile(prospect.name, prospect.company, profile)
+        _get_kb().save_psych_profile(prospect.name, prospect.company, profile)
 
         logs.append(f"PROFILER: Type {profile.disc_type} | {len(profile.style_rules)} style rules")
         return {"psych": profile, "logs": logs}
@@ -404,11 +492,20 @@ async def strategist_node(state: AgentState) -> AgentState:
     psych: PsychProfile = ensure_psych(state.psych)
     instruction = state.user_instruction
     history = state.conversation_history
+    context = ensure_context(getattr(state, "context", None))
     logs = state.logs
 
     history_context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in history[-2:]]) if history else "No history."
 
     inferred_channels = infer_channels_from_instruction(instruction)
+    context_channel_hint = None
+    context_topic_lock = None
+    if context:
+        context_channel_hint = context.task_intent.channel_hint
+        context_topic_lock = context.task_intent.topic_lock
+        if context_channel_hint and context_channel_hint not in inferred_channels:
+            inferred_channels.insert(0, context_channel_hint)
+
     expand_multi = any(k in (instruction or "").lower() for k in ["all channels", "multi-channel", "multichannel", "all variants"])
     if expand_multi:
         inferred_channels = list(dict.fromkeys(inferred_channels + ["email", "whatsapp", "sms", "linkedin_dm", "instagram_dm"]))
@@ -452,8 +549,9 @@ async def strategist_node(state: AgentState) -> AgentState:
             key_points.append(prospect.interests[0])
 
         # Task 2: Remove template hook. Use strict formatting.
-        if getattr(state, 'topic_lock', None):
-             hook = f"Regarding {state.topic_lock}"
+        effective_topic_lock = getattr(state, 'topic_lock', None) or context_topic_lock
+        if effective_topic_lock:
+             hook = f"Regarding {effective_topic_lock}"
         else:
              hook = f"Regarding {goal.lower()}"
             
@@ -494,7 +592,7 @@ If the user says "text him", infer sms/whatsapp. If "connect", infer linkedin_dm
                 },
                 {
                     "role": "user",
-                    "content": f"""INSTRUCTION: "{instruction[:600]}"\nTARGET: {prospect.role} at {prospect.company}\nSTYLE: {psych.communication_style if psych else 'Unknown'}\nHISTORY: {history_context[:400]}\nCHANNEL_HINTS: {', '.join(inferred_channels)}\n\nCreate a StrategyBrief."""
+                    "content": f"""INSTRUCTION: "{instruction[:600]}"\nTARGET: {prospect.role} at {prospect.company}\nSTYLE: {psych.communication_style if psych else 'Unknown'}\nHISTORY: {history_context[:400]}\nCHANNEL_HINTS: {', '.join(inferred_channels)}\nTOPIC_LOCK: {getattr(state, 'topic_lock', None) or context_topic_lock or 'none'}\nMENTION_MEMORY: {(context.compressed_memory[:500] if context else 'n/a')}\n\nCreate a StrategyBrief."""
                 }
             ],
             use_cache=True
@@ -539,15 +637,81 @@ async def scribe_node(state: AgentState) -> AgentState:
     psych: PsychProfile = ensure_psych(state.psych)
     critique: CritiqueResult = ensure_critique(state.latest_critique)
     instruction = state.user_instruction or ""
+    context = ensure_context(getattr(state, "context", None))
 
     current_drafts = state.drafts
     history = state.conversation_history
     logs = state.logs
 
+    target_ctx = context.target_profile if context else None
+    sender_ctx = context.sender_profile if context else None
+    task_ctx = context.task_intent if context else None
+
+    target_name = (target_ctx.name if target_ctx and target_ctx.name else prospect.name)
+    target_role = (target_ctx.role if target_ctx and target_ctx.role else prospect.role)
+    target_company = (target_ctx.company if target_ctx and target_ctx.company else prospect.company)
+    target_industry = (target_ctx.industry if target_ctx and target_ctx.industry else (prospect.industry or "Unknown"))
+    target_seniority = (target_ctx.seniority if target_ctx and target_ctx.seniority else (prospect.seniority or "unknown"))
+    target_tone = (target_ctx.tone if target_ctx and target_ctx.tone else psych.communication_style)
+    target_language_style = (target_ctx.language_style if target_ctx and target_ctx.language_style else "clear")
+    target_interests = (target_ctx.interests if target_ctx and target_ctx.interests else prospect.interests)
+    target_traits = (target_ctx.psych_traits if target_ctx and target_ctx.psych_traits else [])
+    target_recent_focus = (
+        target_ctx.recent_focus_summary
+        if target_ctx and target_ctx.recent_focus_summary
+        else (prospect.summary or (prospect.raw_bio or "")[:220])
+    )
+    target_recent_focus = re.sub(r"\s+", " ", (target_recent_focus or "")).strip()[:320]
+
+    sender_name = sender_ctx.name if sender_ctx and sender_ctx.name else "You"
+    sender_role = sender_ctx.role if sender_ctx and sender_ctx.role else "Professional"
+    sender_company = sender_ctx.company if sender_ctx and sender_ctx.company else "Your Company"
+    sender_value_prop = sender_ctx.value_proposition if sender_ctx and sender_ctx.value_proposition else "Clear value aligned with the topic."
+
+    task_topic_lock = (
+        task_ctx.topic_lock
+        if task_ctx and task_ctx.topic_lock
+        else (getattr(state, "topic_lock", None) or strategy.goal)
+    )
+    task_channel_hint = task_ctx.channel_hint if task_ctx and task_ctx.channel_hint else strategy.target_channel
+
+    structured_injection_prompt = f"""You are drafting outreach based on structured persona data.
+
+TARGET:
+Name: {target_name}
+Role: {target_role} at {target_company}
+Industry: {target_industry}
+Seniority: {target_seniority}
+Tone preference: {target_tone}
+Language style: {target_language_style}
+Interests: {', '.join(target_interests[:4]) if target_interests else 'n/a'}
+Psych traits: {', '.join(target_traits[:4]) if target_traits else 'n/a'}
+Recent focus: {target_recent_focus or 'n/a'}
+
+SENDER:
+Name: {sender_name}
+Role: {sender_role} at {sender_company}
+Credibility: {sender_value_prop}
+
+TASK:
+Topic: {task_topic_lock}
+Channel: {task_channel_hint}
+
+Rules:
+- Stay strictly on topic.
+- Immediately anchor to the topic.
+- Mirror tone naturally.
+- Reference 1-2 specific persona elements.
+- Clear CTA.
+- No generic corporate language.
+- Do not drift into unrelated achievements.
+- Keep under 180 words for email.
+"""
+
     history_context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in history[-3:]]) if history else "None"
 
     query_text = f"{prospect.role} {prospect.company} {strategy.goal}"
-    similar_outreach = kb.get_similar_outreach(query_text=query_text, role=prospect.role, limit=1)
+    similar_outreach = _get_kb().get_similar_outreach(query_text=query_text, role=prospect.role, limit=1)
     kb_context = ""
     if similar_outreach:
         kb_context = f"PAST EXAMPLE:\n{similar_outreach[0]['content'][:500]}"
@@ -580,6 +744,7 @@ async def scribe_node(state: AgentState) -> AgentState:
         logs.append("SCRIBE: All channels already drafted.")
         return {
             "drafts": current_drafts,
+            "last_generated_channels": [],
             "revision_count": state.revision_count,
             "final_output": current_drafts,
             "latest_critique": None,
@@ -589,7 +754,7 @@ async def scribe_node(state: AgentState) -> AgentState:
     # Shared Definitions for Single and Multi-channel
     wants_subject = "subject" in instruction.lower() and "body" in instruction.lower()
     
-    topic_lock = getattr(state, 'topic_lock', None) or ''
+    topic_lock = task_topic_lock or ''
     topic_lock_section = ''
     if topic_lock:
         topic_lock_section = f"""\nTOPIC LOCK (HIGHEST PRIORITY):
@@ -630,7 +795,7 @@ USER REQUEST:
             subject_note = "Output format:\nSubject: <short subject>\nBody: <email body>\n"
 
         # --- NEW: Build topic lock and template ban sections ---
-        topic_lock = getattr(state, 'topic_lock', None) or ''
+        topic_lock = task_topic_lock or ''
         topic_lock_section = ''
         if topic_lock:
             topic_lock_section = f"""\nTOPIC LOCK (HIGHEST PRIORITY):
@@ -647,6 +812,11 @@ You may use professional templates/openers, BUT they must be infused with specif
 """
 
         prompt = f"""You are an elite copywriter.
+
+STRUCTURED INJECTION (SOURCE OF TRUTH):
+{structured_injection_prompt}
+CONDENSED MEMORY:
+{context.compressed_memory if context else 'n/a'}
 
 {QUALITY_RUBRIC_TEXT}
 
@@ -738,11 +908,16 @@ IMPORTANT: No generic corporate tone. Use concrete details from the persona. Out
         
         # TASK 7.1: PLANNING PHASE (Logic Model)
         planning_prompt = f"""You are a campaign strategist.
+STRUCTURED INJECTION:
+{structured_injection_prompt}
+CONDENSED MEMORY:
+{context.compressed_memory if context else 'n/a'}
+
 User Instruction: {instruction}
 Goal: {strategy.goal}
 CTA: {strategy.cta}
 Tone: {psych.communication_style}
-Topic Lock: {getattr(state, 'topic_lock', '')}
+Topic Lock: {task_topic_lock}
 
 Confirm key content requirements before drafting.
 OUTPUT JSON ONLY:
@@ -752,16 +927,23 @@ OUTPUT JSON ONLY:
   "content_structure": "Brief notes on flow"
 }}"""
         plan_content = "Proceed with standard outreach."
-        try:
-             plan_response = await llm_fast.ainvoke(planning_prompt)
-             plan_content = plan_response.content
-        except Exception as e:
-             logger.warning(f"Planning failed: {e}")
+        use_planning = len((instruction or "")) > 220 or len(channels_to_generate) > 2
+        if use_planning:
+            try:
+                 plan_response = await llm_fast.ainvoke(planning_prompt)
+                 plan_content = plan_response.content
+            except Exception as e:
+                 logger.warning(f"Planning failed: {e}")
 
         # TASK 7.2: WRITING PHASE (Creative Model)
         # TASK 9: JSON OUTPUT
         
         prompt = f"""You are an elite copywriter.
+STRUCTURED INJECTION:
+{structured_injection_prompt}
+CONDENSED MEMORY:
+{context.compressed_memory if context else 'n/a'}
+
 PLANNING NOTES:
 {plan_content}
 
@@ -797,7 +979,9 @@ OUTPUT FORMAT:
 """
         try:
             temp = 0.5
-            max_tokens = min(2000, 350 * len(channels_to_generate))
+            # Dynamic cap sized to selected channels; avoids over-generation latency.
+            budget_from_channels = sum(CHANNEL_MAX_TOKENS.get(ch, 180) for ch in channels_to_generate)
+            max_tokens = min(1600, max(420, int(budget_from_channels * 1.1)))
             response = await llm_creative.ainvoke(
                 prompt,
                 config={"temperature": temp, "num_predict": max_tokens}
@@ -823,6 +1007,7 @@ OUTPUT FORMAT:
 
     return {
         "drafts": new_drafts,
+        "last_generated_channels": channels_to_generate,
         "revision_count": state.revision_count + 1,
         "final_output": new_drafts,
         "latest_critique": None,
@@ -840,10 +1025,70 @@ async def critic_node(state: AgentState) -> AgentState:
     strategy: StrategyBrief = ensure_strategy(state.strategy)
     prospect: ProspectProfile = ensure_prospect(state.prospect)
     psych: PsychProfile = ensure_psych(state.psych)
+    context = ensure_context(getattr(state, "context", None))
     drafts = state.drafts
     logs = state.logs
+    previous_channel_critiques = {
+        ch: ensure_critique(cr)
+        for ch, cr in (state.channel_critiques or {}).items()
+    }
+    last_generated_channels = list(getattr(state, "last_generated_channels", []) or [])
 
+    target_ctx = context.target_profile if context else None
+    task_ctx = context.task_intent if context else None
+    expected_topic = (
+        task_ctx.topic_lock
+        if task_ctx and task_ctx.topic_lock
+        else (getattr(state, "topic_lock", None) or "")
+    ).strip()
+    tone_tag = (
+        target_ctx.tone
+        if target_ctx and target_ctx.tone
+        else (psych.communication_style or "professional")
+    )
 
+    persona_signals = []
+    if target_ctx:
+        persona_signals.extend([
+            target_ctx.name,
+            target_ctx.role,
+            target_ctx.company,
+            *(target_ctx.interests[:2] if target_ctx.interests else []),
+        ])
+    persona_signals.extend([
+        prospect.name,
+        prospect.role,
+        prospect.company,
+        *(prospect.interests[:2] if prospect.interests else []),
+    ])
+    persona_signals = [
+        signal.strip() for signal in persona_signals
+        if isinstance(signal, str) and signal.strip() and len(signal.strip()) >= 3
+    ]
+
+    def _has_persona_signal(draft_text: str) -> bool:
+        lower = draft_text.lower()
+        return any(signal.lower() in lower for signal in persona_signals)
+
+    def _normalized_text(text: str) -> str:
+        cleaned = re.sub(r"[^a-z0-9\s]", " ", (text or "").lower())
+        return re.sub(r"\s+", " ", cleaned).strip()
+
+    def _matches_tone(draft_text: str, tone: str) -> bool:
+        body = draft_text.lower()
+        tone_lc = (tone or "").lower()
+        emoji_count = sum(1 for ch in draft_text if ord(ch) > 10000)
+        slang_markers = ["bro", "dude", "lol", "omg", "yo"]
+
+        if any(k in tone_lc for k in ["formal", "professional", "executive"]):
+            if emoji_count > 0 or body.count("!") > 2 or any(s in body for s in slang_markers):
+                return False
+
+        if any(k in tone_lc for k in ["casual", "friendly"]):
+            if emoji_count == 0 and "!" not in draft_text and not any(k in body for k in ["hi", "hey", "great", "glad", "thanks"]):
+                return False
+
+        return True
 
     async def critique_channel(channel: str) -> tuple[str, CritiqueResult]:
         draft = drafts.get(channel, "")
@@ -851,9 +1096,25 @@ async def critic_node(state: AgentState) -> AgentState:
             return (channel, CritiqueResult(score=0, feedback="Empty draft", passed=False))
 
         try:
-            # --- NEW: Updated Critic prompt (no hard bans, just quality check) ---
-            topic_lock = getattr(state, 'topic_lock', None) or ''
-            topic_section = f"\nTOPIC LOCK: {topic_lock}" if topic_lock else ''
+            deterministic_errors = []
+            normalized_topic = _normalized_text(expected_topic)
+            normalized_draft = _normalized_text(draft)
+            if expected_topic and normalized_topic not in normalized_draft:
+                deterministic_errors.append(f"Missing explicit topic lock reference: '{expected_topic}'")
+            if persona_signals and not _has_persona_signal(draft):
+                deterministic_errors.append("No persona signal referenced (name/role/company/interest required).")
+            if not _matches_tone(draft, tone_tag):
+                deterministic_errors.append(f"Tone mismatch for expected tone '{tone_tag}'.")
+
+            if deterministic_errors:
+                return (
+                    channel,
+                    CritiqueResult(
+                        score=3,
+                        feedback="ANTI-DRIFT: " + " | ".join(deterministic_errors),
+                        passed=False,
+                    ),
+                )
 
             critique = await asyncio.to_thread(
                 cached_llm_call,
@@ -863,37 +1124,83 @@ async def critic_node(state: AgentState) -> AgentState:
                 [
                     {
                         "role": "system",
-                        "content": f"""You are a ruthless editor. Grade 1-10 and mark passed only if the draft satisfies:\n{QUALITY_RUBRIC_TEXT}\n\nHALLUCINATION CHECK (CRITICAL):\n- Are ALL claims grounded in the provided prospect profile?\n- Is any company data fabricated?\n- Is any recent activity invented?\n- Does the content match the TOPIC LOCK?\nIf ANY fabrication is detected, set passed=False and feedback=\"HALLUCINATION: [details]\".\n\nINSTRUCTION CHECK:\nDoes the draft actually do what the User Instruction asked? (e.g. ask for a meeting, mention a specific project)? If it misses the main ask, deduct 3 points and set passed=False.\n\nSTRUCTURE & CONSTRAINTS CHECK:\n1. EMAIL: Follow Context -> Intent -> Value -> Action? (Deduct 3 pts).\n2. NEGATIVE CONSTRAINTS: NO "I noticed your work", "Hope you're well", "Quick chat". (Fail immediately).\n3. TONE & LENGTH:\n   - Is length appropriate? (Email ~150w, LinkedIn ~90w, WhatsApp ~50w, SMS ~30w).\n   - Does it mirror the prospect's rhythm?\n   - If grossly over length, deduct 2 points.\n\nPERSONALIZATION CHECK:\nDoes the email feel generic or templated? If it feels like a blast, deduct 2 points.{topic_section}"""
+                        "content": f"""You are a ruthless anti-drift editor. Grade 1-10 and pass only if ALL conditions are met.
+
+{QUALITY_RUBRIC_TEXT}
+
+MANDATORY VALIDATION RULES:
+1. Must reference TOPIC_LOCK explicitly.
+2. Must include at least one persona signal (name/role/company/interest).
+3. Must not introduce facts outside provided structured persona.
+4. Must match the expected tone tag.
+5. Must satisfy user instruction's core ask.
+
+If any mandatory rule fails, set passed=false and explain exactly why.
+If fabricated facts appear, prefix feedback with "HALLUCINATION:".
+
+TOPIC_LOCK: {expected_topic or 'none'}
+TONE_TAG: {tone_tag}
+PERSONA_SIGNALS: {', '.join(persona_signals[:8]) if persona_signals else 'none'}"""
                     },
                     {
                         "role": "user",
-                        "content": f"""USER INSTRUCTION: "{state.user_instruction}"\nCHANNEL: {channel}\nINTENDED TONE: {psych.communication_style}\nDRAFT:\n{draft[:700]}\n\nEvaluate: instruction adherence, hallucination check, channel fit, tone match, personalization depth. Penalize missing the specific ask."""
+                        "content": f"""USER INSTRUCTION: "{state.user_instruction}"
+CHANNEL: {channel}
+INTENDED TONE: {tone_tag}
+DRAFT:
+{draft[:900]}
+
+Evaluate for anti-drift, factual grounding, and channel fit."""
                     }
                 ],
-                use_cache=True # Task 11: Enable safe caching
+                use_cache=True
             )
             return (channel, critique)
         except Exception as e:
             logger.error(f"Critique failed for {channel}: {e}")
             return (channel, CritiqueResult(score=7, feedback="Proceed", passed=True))
 
-    critique_tasks = [critique_channel(ch) for ch in strategy.target_channels if ch in drafts]
-    results = await asyncio.gather(*critique_tasks)
+    channels_with_drafts = [ch for ch in strategy.target_channels if ch in drafts]
+    if last_generated_channels:
+        channels_to_review = [ch for ch in last_generated_channels if ch in channels_with_drafts]
+    else:
+        channels_to_review = [
+            ch for ch in channels_with_drafts
+            if ch not in previous_channel_critiques or not previous_channel_critiques[ch].passed
+        ]
 
-    critiques = {ch: cr for ch, cr in results}
-    avg_score = sum(c.score for c in critiques.values()) / len(critiques) if critiques else 0
-    all_passed = all(c.passed for c in critiques.values())
+    critique_tasks = [critique_channel(ch) for ch in channels_to_review]
+    results = await asyncio.gather(*critique_tasks) if critique_tasks else []
 
-    worst_channel = min(critiques.items(), key=lambda x: x[1].score)[0] if critiques else "unknown"
-    worst_critique = critiques[worst_channel] if critiques else CritiqueResult(score=0, feedback="No critiques", passed=False)
+    critiques = dict(previous_channel_critiques)
+    critiques.update({ch: cr for ch, cr in results})
 
-    logs.append(f"CRITIC: Avg {avg_score:.1f}/10 | {len(critiques)} channels | Passed: {all_passed}")
+    evaluated = [critiques[ch] for ch in channels_with_drafts if ch in critiques]
+    avg_score = (sum(c.score for c in evaluated) / len(evaluated)) if evaluated else 0
+    all_passed = bool(evaluated) and len(evaluated) == len(channels_with_drafts) and all(c.passed for c in evaluated)
+
+    if evaluated:
+        worst_channel = min(
+            [ch for ch in channels_with_drafts if ch in critiques],
+            key=lambda ch: critiques[ch].score
+        )
+        worst_critique = critiques[worst_channel]
+    else:
+        worst_channel = "unknown"
+        worst_critique = CritiqueResult(score=0, feedback="No critiques", passed=False)
+
+    reused_count = max(0, len(channels_with_drafts) - len(channels_to_review))
+    logs.append(
+        f"CRITIC: Avg {avg_score:.1f}/10 | Reviewed {len(channels_to_review)}/{len(channels_with_drafts)} channels "
+        f"(reused={reused_count}) | Passed: {all_passed}"
+    )
 
     if all_passed:
         best_channel = max(critiques.items(), key=lambda x: x[1].score)[0]
-        kb.save_outreach(state.prospect, strategy, drafts[best_channel])
+        _get_kb().save_outreach(state.prospect, strategy, drafts[best_channel])
 
     return {
         "latest_critique": worst_critique,
+        "channel_critiques": critiques,
         "logs": logs
     }

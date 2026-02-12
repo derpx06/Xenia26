@@ -1,13 +1,11 @@
 from bs4 import BeautifulSoup
 from loguru import logger
 
-from ml.domain.documents import ArticleDocument
-
 from .base import BaseSeleniumCrawler
 
 
 class MediumCrawler(BaseSeleniumCrawler):
-    model = ArticleDocument
+    model = None
 
     def set_extra_driver_options(self, options) -> None:
         # Anti-bot detection measures
@@ -57,15 +55,5 @@ class MediumCrawler(BaseSeleniumCrawler):
 
         self.driver.close()
 
-        user = kwargs["user"]
-        instance = self.model(
-            platform="medium",
-            content=data,
-            link=link,
-            author_id=user.id,
-            author_full_name=user.full_name,
-        )
-        instance.save()
-
-        logger.info(f"Successfully scraped and saved article: {link}")
+        logger.info(f"Successfully scraped article: {link}")
         return data 

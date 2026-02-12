@@ -6,7 +6,6 @@ import base64
 
 from loguru import logger
 
-from ml.domain.documents import RepositoryDocument
 from .base import BaseCrawler
 
 
@@ -19,7 +18,7 @@ class GithubProfileCrawler(BaseCrawler):
     - Language statistics
     - Activity metrics
     """
-    model = RepositoryDocument
+    model = None
     GITHUB_API = "https://api.github.com"
 
     def __init__(self, github_token: str | None = None, top_repo_limit: int = 5):
@@ -86,13 +85,6 @@ class GithubProfileCrawler(BaseCrawler):
             username: GitHub username (e.g., 'derpx06')
             **kwargs: Must include 'user' key with UserDocument instance
         """
-        # Check if already scraped
-        existing = self.model.find(link=f"https://github.com/{username}")
-        if existing is not None:
-            logger.info(f"GitHub profile already exists: {username}")
-            # Return cached content so the agent tool can use it
-            return existing.content
-
         logger.info(f"Extracting GitHub profile: {username}")
 
         # --------------------
@@ -229,24 +221,6 @@ class GithubProfileCrawler(BaseCrawler):
                 "avg_stars_per_repo": round(total_stars / max(active_repos, 1), 2),
             },
         }
-
-        # Get user from kwargs (required for Document)
-        author = kwargs.get("user")
-        if not author:
-            # Create a dummy user for standalone usage
-            from ml.domain.documents import UserDocument
-            author = UserDocument(first_name="GitHub", last_name="User")
-            # Don't save the dummy user
-
-        instance = self.model(
-            name=f"{username}_profile",  # Required by RepositoryDocument
-            platform="github",
-            link=user["html_url"],
-            content=content,
-            author_id=author.id,
-            author_full_name=author.full_name,
-        )
-        instance.save()
 
         logger.info(f"✅ Finished extracting GitHub profile: {username}")
         logger.info(f"   - Repos: {active_repos}, Stars: {total_stars}, Forks: {total_forks}")

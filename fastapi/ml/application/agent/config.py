@@ -12,6 +12,7 @@ CHANNEL_TEMPS = {
     "whatsapp": 0.4,
     "sms": 0.3,
     "twitter_thread": 0.55,
+    "research_report": 0.35,
     "general_response": 0.3,
     "instagram_dm": 0.5,
 }
@@ -38,19 +39,21 @@ CHANNEL_RULES = {
     "whatsapp": "30-70 words. Direct, conversational. Short sentences. One core idea. One CTA. No paragraph blocks. Feel like a real person.",
     "sms": "20-40 words. ZERO fluff. One idea. One action. No intro. Straight to value.",
     "twitter_thread": "Hook tweet + 1-2 value tweets + CTA tweet. Punchy.",
+    "research_report": "Structured markdown report with clear sections, facts first, no fluff, include concise recommendations.",
     "instagram_dm": "Friendly, visual language. 2 sentences max.",
     "general_response": "Clear, helpful answer. Markdown OK."
 }
 
 CHANNEL_MAX_TOKENS = {
-    "email": 300,
-    "linkedin_dm": 200,
-    "linkedin_post": 250,
-    "whatsapp": 120,
-    "sms": 70,
-    "twitter_thread": 300,
-    "instagram_dm": 150,
-    "general_response": 250,
+    "email": 260,
+    "linkedin_dm": 170,
+    "linkedin_post": 220,
+    "whatsapp": 100,
+    "sms": 60,
+    "twitter_thread": 240,
+    "research_report": 420,
+    "instagram_dm": 120,
+    "general_response": 210,
 }
 
 # --- NEW: Common topics for knowledge confidence check (Point 3) ---
