@@ -46,6 +46,7 @@ export default function OutreachChat() {
   const [cursorPosition, setCursorPosition] = useState(null);
   const [mentionedContacts, setMentionedContacts] = useState([]); // Track selected mentions
 
+
   // Fetch Contacts
   useEffect(() => {
     const fetchContacts = async () => {
@@ -613,83 +614,11 @@ export default function OutreachChat() {
                     {/* ACTIONS */}
                     {msg.role === 'assistant' && (
                       <div className="mt-3 w-full pl-1">
-                        {(activeSendFlow?.msgIndex === i || msg.generated_content || msg.streaming_generated_content || msg.active_node === 'WRITER') ? (
+                        {(activeSendFlow?.msgIndex === i || msg.active_node === 'WRITER') ? (
                           <div className="w-full mt-4 animate-in slide-in-from-bottom-2 duration-300">
-                            {/* AUTOMATIC CARD RENDERING FROM GENERATED CONTENT (Streaming or Final) */}
-                            {(msg.generated_content || msg.streaming_generated_content) ? (
-                              <div className="flex flex-col gap-4 w-full">
-                                {(msg.generated_content?.email || msg.streaming_generated_content?.email) && (
-                                  <EmailPreviewCard
-                                    content={msg.generated_content?.email || msg.streaming_generated_content?.email}
-                                    audioPath={msg.generated_content?.audio_path}
-                                    onConvertAudio={() => handleGenerateAudio(msg.generated_content?.email || msg.streaming_generated_content?.email, msg.id)}
-                                    isAudioLoading={loadingAction}
-                                    previewMode={true}
-                                    onProceed={() => {
-                                      // Find related user message (usually the previous one) for contact context
-                                      const relatedUserMsg = i > 0 && messages[i - 1].role === 'user' ? messages[i - 1] : null;
-                                      const primaryContact = relatedUserMsg?.mentions?.[0];
-                                      const prefillValue = primaryContact ? primaryContact.email : "";
 
-                                      setActiveSendFlow({
-                                        msgIndex: i,
-                                        type: 'email',
-                                        content: msg.generated_content?.email || msg.streaming_generated_content?.email,
-                                        step: 'input',
-                                        value: prefillValue
-                                      });
-                                    }}
-                                    onCancel={() => { }}
-                                  />
-                                )}
-                                {(msg.generated_content?.linkedin || msg.streaming_generated_content?.linkedin) && (
-                                  <LinkedInPreviewCard
-                                    content={msg.generated_content?.linkedin || msg.streaming_generated_content?.linkedin}
-                                    audioPath={msg.generated_content?.audio_path}
-                                    onConvertAudio={() => handleGenerateAudio(msg.generated_content?.linkedin || msg.streaming_generated_content?.linkedin, msg.id)}
-                                    isAudioLoading={loadingAction}
-                                    previewMode={true}
-                                    onProceed={() => {
-                                      const relatedUserMsg = i > 0 && messages[i - 1].role === 'user' ? messages[i - 1] : null;
-                                      const primaryContact = relatedUserMsg?.mentions?.[0];
-                                      const prefillValue = primaryContact ? primaryContact.linkedinUrl : ""; // Matching ContactInputStep schema
-
-                                      setActiveSendFlow({
-                                        msgIndex: i,
-                                        type: 'linkedin',
-                                        content: msg.generated_content?.linkedin || msg.streaming_generated_content?.linkedin,
-                                        step: 'input',
-                                        value: prefillValue
-                                      });
-                                    }}
-                                    onCancel={() => { }}
-                                  />
-                                )}
-                                {(msg.generated_content?.whatsapp || msg.streaming_generated_content?.whatsapp) && (
-                                  <WhatsAppPreviewCard
-                                    content={msg.generated_content?.whatsapp || msg.streaming_generated_content?.whatsapp}
-                                    audioPath={msg.generated_content?.audio_path}
-                                    onConvertAudio={() => handleGenerateAudio(msg.generated_content?.whatsapp || msg.streaming_generated_content?.whatsapp, msg.id)}
-                                    isAudioLoading={loadingAction}
-                                    previewMode={true}
-                                    onProceed={() => {
-                                      const relatedUserMsg = i > 0 && messages[i - 1].role === 'user' ? messages[i - 1] : null;
-                                      const primaryContact = relatedUserMsg?.mentions?.[0];
-                                      const prefillValue = primaryContact ? primaryContact.phone : "";
-
-                                      setActiveSendFlow({
-                                        msgIndex: i,
-                                        type: 'whatsapp',
-                                        content: msg.generated_content?.whatsapp || msg.streaming_generated_content?.whatsapp,
-                                        step: 'input',
-                                        value: prefillValue
-                                      });
-                                    }}
-                                    onCancel={() => { }}
-                                  />
-                                )}
-                              </div>
-                            ) : msg.active_node === 'WRITER' ? (
+                            {/* DRAFTING STATE */}
+                            {msg.active_node === 'WRITER' && !activeSendFlow ? (
                               <div className="flex flex-col gap-4 w-full animate-pulse">
                                 <div className="p-6 rounded-2xl bg-white/5 border border-white/10 border-dashed flex items-center gap-4 text-zinc-500">
                                   <div className="w-10 h-10 rounded-xl bg-zinc-800 animate-spin flex items-center justify-center">⏳</div>
@@ -753,13 +682,22 @@ export default function OutreachChat() {
                           </div>
                         ) : (
                           <div className="flex gap-2">
-                            <button onClick={() => handleSendAction(i, msg.content, 'email')} className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-purple-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
+                            <button
+                              onClick={() => handleSendAction(i, msg.generated_content?.email || msg.streaming_generated_content?.email || msg.content, 'email')}
+                              className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-purple-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2"
+                            >
                               <Mail className="w-3 h-3" /> Email
                             </button>
-                            <button onClick={() => handleSendAction(i, msg.content, 'whatsapp')} className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-green-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
+                            <button
+                              onClick={() => handleSendAction(i, msg.generated_content?.whatsapp || msg.streaming_generated_content?.whatsapp || msg.content, 'whatsapp')}
+                              className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-green-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2"
+                            >
                               <Phone className="w-3 h-3" /> WhatsApp
                             </button>
-                            <button onClick={() => handleSendAction(i, msg.content, 'linkedin')} className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-700/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
+                            <button
+                              onClick={() => handleSendAction(i, msg.generated_content?.linkedin || msg.streaming_generated_content?.linkedin || msg.content, 'linkedin')}
+                              className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-700/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2"
+                            >
                               {/* Using Map icon temporarily for LinkedIn or text, reusing generic icon if needed, but text is clearer */}
                               <span className="font-bold text-[10px] bg-blue-600 text-white px-1 rounded">in</span> LinkedIn
                             </button>
