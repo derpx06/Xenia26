@@ -25,94 +25,92 @@ export function WhatsAppPreviewCard({ content, onSend, onCancel, defaultPhone = 
         setIsSending(false);
     };
 
-    const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
     return (
-        <div className="w-full max-w-sm mx-auto bg-[#0b141a] rounded-3xl shadow-2xl overflow-hidden font-sans border border-zinc-800 relative animate-in slide-in-from-bottom-10 fade-in duration-500">
-            {/* WhatsApp Header */}
-            <div className="bg-[#202c33] text-zinc-100 px-4 py-3 flex items-center justify-between shadow-md z-10 relative">
-                <div className="flex items-center gap-3">
-                    <ArrowLeft className="w-5 h-5 cursor-pointer text-zinc-300" onClick={onCancel} />
-                    <div className="w-9 h-9 bg-zinc-600 rounded-full flex items-center justify-center text-zinc-300 font-bold overflow-hidden">
-                        <img src="https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png" alt="Profile" className="w-full h-full object-cover opacity-80 invert" />
-                    </div>
-                    <div>
-                        <input
-                            value={phone}
-                            onChange={(e) => setPhone(e.target.value)}
-                            placeholder="+1 234..."
-                            className="bg-transparent text-zinc-100 placeholder-zinc-500 outline-none w-32 font-medium text-base"
-                        />
-                        <p className="text-xs text-zinc-400">online</p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-4 text-zinc-300">
-                    <Video className="w-5 h-5 cursor-pointer hover:text-zinc-100" />
-                    <Phone className="w-5 h-5 cursor-pointer hover:text-zinc-100" />
-                    <MoreVertical className="w-5 h-5 cursor-pointer hover:text-zinc-100" />
-                </div>
-            </div>
-
-            {/* Chat Area (Background Pattern) */}
+        <div className="w-full max-w-2xl mx-auto font-sans animate-in slide-in-from-bottom-10 fade-in duration-500">
+            {/* WhatsApp-style Message Bubble Container */}
             <div
-                className="h-[300px] p-4 overflow-y-auto flex flex-col gap-2 relative bg-[#0b141a]"
+                className="bg-[#0b141a] rounded-2xl shadow-xl overflow-hidden border border-zinc-800"
                 style={{
                     backgroundImage: "url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')",
                     backgroundSize: "400px",
                     backgroundBlendMode: "overlay"
                 }}
             >
-                {/* Outgoing Message Bubble */}
-                <div className="self-end bg-[#005c4b] text-zinc-100 p-2 px-3 rounded-lg rounded-tr-none shadow-md max-w-[85%] text-sm relative leading-relaxed">
-                    <textarea
-                        value={message}
-                        onChange={(e) => setMessage(e.target.value)}
-                        className="bg-transparent w-full resize-none outline-none min-h-[60px] text-zinc-100 placeholder-zinc-400"
-                    />
-                    <div className="flex justify-end items-end gap-1 mt-1">
-                        <span className="text-[10px] text-zinc-400/80">{currentTime}</span>
-                        <span className="text-[#53bdeb] font-bold text-[10px]">✓✓</span>
+                <div className="p-4 flex flex-col items-end">
+                    {/* The Message Bubble itself */}
+                    <div className="bg-[#005c4b] w-full rounded-xl rounded-tr-none shadow-md overflow-hidden relative border border-[#004a3c]">
+                        <textarea
+                            value={message}
+                            onChange={(e) => setMessage(e.target.value)}
+                            className="w-full min-h-[300px] bg-transparent text-zinc-100 placeholder-emerald-200/50 outline-none resize-none p-6 text-lg leading-relaxed font-medium"
+                            placeholder="Type a WhatsApp message..."
+                        />
+                        {/* Time tick */}
+                        <div className="absolute bottom-2 right-4 flex items-center gap-1.5 opacity-70">
+                            <span className="text-xs text-emerald-100">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span className="text-[#53bdeb] font-bold text-xs">✓✓</span>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            {/* Input Bar */}
-            <div className="bg-[#202c33] px-2 py-2 flex items-center gap-2">
-                <Smile className="w-6 h-6 text-zinc-400 cursor-pointer hover:text-zinc-300" />
-                <Paperclip className="w-6 h-6 text-zinc-400 cursor-pointer hover:text-zinc-300" />
-                <div className="flex-1 bg-[#2a3942] rounded-lg px-3 py-2 text-sm shadow-sm flex items-center">
-                    <span className="text-zinc-400">Message</span>
-                </div>
-                <button
-                    onClick={handleAction}
-                    disabled={isSending}
-                    className={`bg-[#00a884] flex items-center justify-center text-white shadow-md hover:bg-[#008f70] transition-colors ${previewMode ? 'px-6 py-2 rounded-full w-auto' : 'w-10 h-10 rounded-full'}`}
-                >
-                    {isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : (previewMode ? <span className="font-bold text-sm">Proceed</span> : <Send className="w-5 h-5 pl-1" />)}
-                </button>
-            </div>
-
-            {/* Audio Section */}
-            {(audioPath || previewMode) && (
-                <div className="px-4 py-2 border-t border-zinc-800 flex items-center justify-between gap-4" style={{ backgroundColor: '#202c33' }}>
-                    <div className="flex items-center gap-3 flex-1">
-                        {!audioPath ? (
-                            <button
-                                onClick={onConvertAudio}
-                                disabled={isAudioLoading}
-                                className="flex items-center gap-2 px-3 py-1 bg-[#2a3942] hover:bg-[#111b21] text-emerald-400 rounded-lg text-xs font-bold transition-colors border border-zinc-700 disabled:opacity-50"
-                            >
-                                {isAudioLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Volume2 className="w-4 h-4" />}
-                                {isAudioLoading ? "Converting..." : "Convert to Audio"}
-                            </button>
-                        ) : (
+                {/* Audio Preview (if available) - Inside the container but below the bubble area */}
+                {audioPath && (
+                    <div className="px-6 py-3 bg-[#005c4b]/20 border-t border-zinc-800/50 flex items-center justify-between backdrop-blur-sm">
+                        <div className="flex items-center gap-3 w-full">
+                            <span className="text-emerald-400 text-sm font-medium whitespace-nowrap">Audio Preview</span>
                             <audio
                                 src={`http://localhost:8000${audioPath}`}
                                 controls
-                                className="h-8 w-full max-w-xs scale-90 origin-left invert-[.9]"
+                                className="h-8 w-full max-w-md opacity-90 hover:opacity-100 transition-opacity invert-[.9]"
                             />
-                        )}
-                        <span className="text-[10px] text-zinc-500 font-medium">XTTS v2 Preview</span>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Action Bar */}
+            <div className="flex items-center justify-between mt-4 px-2">
+                <button
+                    onClick={onCancel}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-all text-sm font-medium"
+                >
+                    <X className="w-4 h-4" />
+                    Cancel
+                </button>
+
+                <div className="flex items-center gap-3">
+                    {!audioPath && (
+                        <button
+                            onClick={onConvertAudio}
+                            disabled={isAudioLoading}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all text-sm font-medium disabled:opacity-50"
+                        >
+                            {isAudioLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Volume2 className="w-4 h-4" />}
+                            {isAudioLoading ? "Converting..." : "Convert to Audio"}
+                        </button>
+                    )}
+
+                    <button
+                        onClick={handleAction}
+                        disabled={isSending}
+                        className="bg-[#00a884] hover:bg-[#008f70] text-black px-8 py-2.5 rounded-full font-bold text-base transition-all shadow-lg shadow-emerald-900/20 disabled:opacity-70 flex items-center gap-2 translate-y-0 active:translate-y-0.5"
+                    >
+                        {isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : (previewMode ? "Proceed" : "Send WhatsApp")}
+                        {!isSending && <Send className="w-4 h-4" />}
+                    </button>
+                </div>
+            </div>
+
+            {!previewMode && (
+                <div className="flex justify-center mt-6">
+                    <div className="flex items-center gap-3 bg-zinc-900/50 px-4 py-2 rounded-full border border-zinc-800">
+                        <span className="text-zinc-500 text-sm">To:</span>
+                        <input
+                            value={phone}
+                            onChange={(e) => setPhone(e.target.value)}
+                            placeholder="+1 234..."
+                            className="bg-transparent text-zinc-200 outline-none text-sm w-40 placeholder-zinc-600"
+                        />
                     </div>
                 </div>
             )}
