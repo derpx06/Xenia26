@@ -380,6 +380,7 @@ def _extract_topic_lock(clean_instruction: str, topic_lock_hint: Optional[str]) 
         "email", "message", "dm", "whatsapp", "sms", "linkedin", "linkedina",
         "linkdin", "instagram", "twitter", "thread", "post", "outreach",
         "watsapp", "whatappa", "whatapp", "whatsap",
+        "cto", "ceo", "cfo", "coo", "vp", "director", "head", "manager",
         "send", "write", "draft", "compose", "create", "him", "her", "them", "me",
     ]
     noise_re = r"\b(" + "|".join(re.escape(t) for t in noise_terms) + r")\b"
@@ -389,6 +390,7 @@ def _extract_topic_lock(clean_instruction: str, topic_lock_hint: Optional[str]) 
         if match:
             candidate = match.group(1).strip(" .,!?:;")
             candidate = re.sub(noise_re, "", candidate, flags=re.IGNORECASE)
+            candidate = re.sub(r"\bto\b", "", candidate, flags=re.IGNORECASE)
             candidate = re.sub(r"\s+", " ", candidate).strip()
             candidate = re.sub(r"\bcollaboration\s+about\b", "collaboration", candidate, flags=re.IGNORECASE)
             candidate = re.sub(r"^(?:(?:and|for|to|about)\s+)+", "", candidate, flags=re.IGNORECASE)

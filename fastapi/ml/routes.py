@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import json
+import re
 from pathlib import Path
 import base64
 from datetime import datetime, timezone
@@ -143,7 +144,7 @@ async def _build_personalized_fallback_response(message: str, user_email: Option
     channel = channels[0] if channels else (task.channel_hint or "email")
 
     target_name = target.name or "there"
-    role_company = "professional"
+    role_company = ""
     if target.role and target.company:
         role_company = f"{target.role} at {target.company}"
     elif target.role:
@@ -152,23 +153,50 @@ async def _build_personalized_fallback_response(message: str, user_email: Option
         role_company = f"leader at {target.company}"
 
     interest = (target.interests[0] if target.interests else "").strip()
-    interest_line = f" given your focus on {interest}" if interest else ""
+    if interest:
+        fit_clause = f"your focus on {interest} makes this especially relevant."
+    else:
+        fit_clause = "this looks relevant based on your current priorities."
+    fit_clause_sentence = fit_clause[:1].upper() + fit_clause[1:] if fit_clause else ""
     topic = task.topic_lock or "our collaboration"
     sender_name = sender.name or "our team"
+    intent = (task.intent_type or "").lower()
+    if "follow" in intent:
+        cta = "Would Tuesday or Wednesday work for a quick follow-up?"
+    elif "meeting" in intent:
+        cta = "Would you be open to a 15-minute call next week?"
+    elif "intro" in intent:
+        cta = "Open to a quick introduction call?"
+    else:
+        cta = "Would you be open to a short call next week to explore this?"
 
-    if channel in {"whatsapp", "sms", "instagram_dm"}:
+    if channel == "sms":
+        sms_topic = topic
+        sms_topic = re.sub(r"^remind\s+about\s+", "", sms_topic, flags=re.IGNORECASE).strip()
+        sms_cta = "Please reply YES to confirm." if "remind" in (task.topic_lock or "").lower() else cta
+        draft = f"Hi {target_name}, quick reminder: {sms_topic}. {sms_cta}"
+        draft = draft[:160]
+    elif channel in {"whatsapp", "instagram_dm"}:
         draft = (
             f"Hi {target_name}, reaching out about {topic}. "
-            f"I think this could be relevant for you as {role_company}{interest_line}. "
-            "Open to a quick chat this week?"
+            f"{fit_clause_sentence} {cta}"
+        )
+    elif channel == "linkedin_dm":
+        role_prefix = f"As {role_company}, " if role_company else ""
+        draft = (
+            f"Hi {target_name}, I wanted to connect about {topic}. "
+            f"{role_prefix}{fit_clause_sentence} {cta}"
         )
     else:
+        subject = f"Subject: Quick note on {topic}\n\n"
+        role_line = f"As {role_company}, {fit_clause_sentence}" if role_company else fit_clause_sentence
         draft = (
+            subject +
             f"Hi {target_name},\n\n"
-            f"I’m reaching out regarding {topic}. "
-            f"Given your work as {role_company}{interest_line}, this looks like a strong fit.\n\n"
-            f"I’m {sender_name}, and I’d value a short conversation to explore a practical collaboration path.\n\n"
-            "Would you be open to a quick call next week?"
+            f"I’m reaching out regarding {topic}.\n\n"
+            f"{role_line}\n\n"
+            f"I’m {sender_name}, and I’d value a short discussion on a practical next step.\n\n"
+            f"{cta}"
         )
 
     return {
