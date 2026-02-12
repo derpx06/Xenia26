@@ -34,23 +34,20 @@ from .mention_intelligence import build_context_injection, context_to_prospect, 
 
 
 class _NullKnowledgeBase:
-    def save_prospect(self, prospect):  # noqa: D401
+    def save_prospect(self, *_args, **_kwargs) -> None:
         return None
 
-    def get_prospect(self, name, company):
+    def get_psych_profile(self, *_args, **_kwargs):
         return None
 
-    def save_psych_profile(self, name, company, profile):
+    def save_psych_profile(self, *_args, **_kwargs) -> None:
         return None
 
-    def get_psych_profile(self, name, company):
-        return None
-
-    def save_outreach(self, prospect, strategy, content):
-        return None
-
-    def get_similar_outreach(self, query_text, role=None, limit=3):
+    def get_similar_outreach(self, *_args, **_kwargs):
         return []
+
+    def save_outreach(self, *_args, **_kwargs) -> None:
+        return None
 
 
 _kb_instance = None
@@ -60,11 +57,12 @@ def _get_kb():
     global _kb_instance
     if _kb_instance is not None:
         return _kb_instance
+
     try:
         from .knowledge import SimpleKnowledgeBase
         _kb_instance = SimpleKnowledgeBase()
-    except Exception as e:
-        logger.warning(f"KB disabled due to init error: {e}")
+    except Exception as exc:
+        logger.warning(f"KB disabled due to import/init error: {exc}")
         _kb_instance = _NullKnowledgeBase()
     return _kb_instance
 
@@ -268,9 +266,10 @@ async def hunter_node(state: AgentState) -> AgentState:
         combined_texts = []
         if notes_text:
             combined_texts.append(notes_text)
-        from ..crawlers.dispatcher import CrawlerDispatcher
         for src in source_urls:
             logs.append(f"HUNTER: Analyzing {src}...")
+            from ..crawlers.dispatcher import CrawlerDispatcher
+
             dispatcher = CrawlerDispatcher.build().register_linkedin().register_medium().register_github()
             crawler = dispatcher.get_crawler(src)
 

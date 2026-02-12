@@ -1,6 +1,5 @@
 import re
 from urllib.parse import urlparse
-from typing import Any
 
 from loguru import logger
 
@@ -21,8 +20,8 @@ class CrawlerDispatcher:
         try:
             from .medium import MediumCrawler
             self.register("https://medium.com", MediumCrawler)
-        except Exception as e:
-            logger.warning(f"Medium crawler unavailable: {e}")
+        except Exception as exc:
+            logger.warning(f"Medium crawler unavailable: {exc}")
 
         return self
 
@@ -30,8 +29,8 @@ class CrawlerDispatcher:
         try:
             from .linkedin import LinkedInCrawler
             self.register("https://linkedin.com", LinkedInCrawler)
-        except Exception as e:
-            logger.warning(f"LinkedIn crawler unavailable: {e}")
+        except Exception as exc:
+            logger.warning(f"LinkedIn crawler unavailable: {exc}")
 
         return self
 
@@ -39,8 +38,8 @@ class CrawlerDispatcher:
         try:
             from .github import GithubCrawler
             self.register("https://github.com", GithubCrawler)
-        except Exception as e:
-            logger.warning(f"GitHub crawler unavailable: {e}")
+        except Exception as exc:
+            logger.warning(f"GitHub crawler unavailable: {exc}")
 
         return self
 

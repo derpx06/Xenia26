@@ -1,14 +1,7 @@
-"""
-Crawler package exports.
-
-Keep this module import-light to avoid forcing optional crawler dependencies
-during unrelated app startup paths.
-"""
-
 __all__ = ["CrawlerDispatcher", "GithubCrawler", "LinkedInCrawler", "MediumCrawler"]
 
 
-def __getattr__(name):
+def __getattr__(name: str):
     if name == "CrawlerDispatcher":
         from .dispatcher import CrawlerDispatcher
         return CrawlerDispatcher
@@ -21,4 +14,4 @@ def __getattr__(name):
     if name == "MediumCrawler":
         from .medium import MediumCrawler
         return MediumCrawler
-    raise AttributeError(f"module {__name__} has no attribute {name}")
+    raise AttributeError(name)

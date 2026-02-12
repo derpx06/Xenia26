@@ -1,28 +1,11 @@
 import time
 from abc import ABC, abstractmethod
 from tempfile import mkdtemp
-
-_chromedriver_ready = False
-
-
-def _ensure_chromedriver() -> None:
-    """
-    Lazily install/resolve chromedriver.
-    Running this at import-time can destabilize app startup in some environments.
-    """
-    global _chromedriver_ready
-    if _chromedriver_ready:
-        return
-    try:
-        import chromedriver_autoinstaller
-        chromedriver_autoinstaller.install()
-        _chromedriver_ready = True
-    except Exception as e:
-        print(f"Warning: Failed to install chromedriver: {e}")
+from typing import Any
 
 
 class BaseCrawler(ABC):
-    model: object | None = None
+    model: Any = None
 
     @abstractmethod
     def extract(self, link: str, **kwargs) -> None: ...
@@ -35,8 +18,9 @@ class BaseCrawler(ABC):
 
 class BaseSeleniumCrawler(BaseCrawler, ABC):
     def __init__(self, scroll_limit: int = 5) -> None:
-        _ensure_chromedriver()
         from selenium import webdriver
+
+        self._ensure_chromedriver()
         options = webdriver.ChromeOptions()
 
         options.add_argument("--no-sandbox")
@@ -56,10 +40,20 @@ class BaseSeleniumCrawler(BaseCrawler, ABC):
         self.set_extra_driver_options(options)
 
         self.scroll_limit = scroll_limit
-        self.driver = webdriver.Chrome(options=options)
+        self.driver = webdriver.Chrome(
+            options=options,
+        )
 
-    def set_extra_driver_options(self, options) -> None:
+    def set_extra_driver_options(self, options: Any) -> None:
         pass
+
+    @staticmethod
+    def _ensure_chromedriver() -> None:
+        try:
+            import chromedriver_autoinstaller
+            chromedriver_autoinstaller.install()
+        except Exception:
+            pass
 
     def login(self) -> None:
         pass

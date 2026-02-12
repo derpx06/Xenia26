@@ -137,6 +137,8 @@ def infer_channels_from_instruction(instruction: str) -> List[str]:
     has_twitter = _fuzzy_token_match(tokens, ["twitter", "twiter", "tweet"], threshold=0.8)
     has_thread = _fuzzy_token_match(tokens, ["thread", "threads"], threshold=0.82)
     has_report = _fuzzy_token_match(tokens, ["report", "analysis", "summary", "research"], threshold=0.82)
+    has_followup = ("follow up" in instruction_lc) or ("follow-up" in instruction_lc)
+    has_meeting = _fuzzy_token_match(tokens, ["meeting", "call", "schedule", "calendar"], threshold=0.8)
 
     if has_email or "cold email" in instruction_lc:
         channels.append("email")
@@ -162,6 +164,11 @@ def infer_channels_from_instruction(instruction: str) -> List[str]:
 
     if has_report or "research report" in instruction_lc:
         channels.append("research_report")
+
+    if has_followup and not channels:
+        channels.append("email")
+    if has_meeting and "email" not in channels and not (has_whatsapp or has_sms):
+        channels.append("email")
     
     # Generic outreach intent? Suggest email + linkedin_dm + whatsapp as smart defaults
     # Broadened scope: any "write/draft" intent should trigger at least email/linkedin/whatsapp

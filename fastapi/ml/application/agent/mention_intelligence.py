@@ -30,7 +30,7 @@ from .schemas import (
 MENTION_RE = re.compile(
     r"(?<!\S)@([A-Za-z0-9._%+-]+(?:@[A-Za-z0-9.-]+\.[A-Za-z]{2,})?)"
 )
-MAX_INJECTION_TOKENS = 400
+MAX_INJECTION_TOKENS = 260
 _CONTEXT_CACHE_TTL_SECONDS = 120
 _context_cache: Dict[str, Tuple[float, ContextInjection]] = {}
 
@@ -375,15 +375,30 @@ def _extract_topic_lock(clean_instruction: str, topic_lock_hint: Optional[str]) 
         r"(?:send|write|draft|compose|create)\s+(?:him|her|them|me)?\s*(?:an?|the)?\s*(.+)$",
         r"(?:about|regarding|on)\s+(.+)$",
     ]
+
+    noise_terms = [
+        "email", "message", "dm", "whatsapp", "sms", "linkedin", "linkedina",
+        "linkdin", "instagram", "twitter", "thread", "post", "outreach",
+        "watsapp", "whatappa", "whatapp", "whatsap",
+        "send", "write", "draft", "compose", "create", "him", "her", "them", "me",
+    ]
+    noise_re = r"\b(" + "|".join(re.escape(t) for t in noise_terms) + r")\b"
+
     for pattern in patterns:
         match = re.search(pattern, text, flags=re.IGNORECASE)
         if match:
             candidate = match.group(1).strip(" .,!?:;")
-            candidate = re.sub(r"\b(email|message|dm|whatsapp|sms)\b", "", candidate, flags=re.IGNORECASE)
+            candidate = re.sub(noise_re, "", candidate, flags=re.IGNORECASE)
+            candidate = re.sub(r"\s+", " ", candidate).strip()
+            candidate = re.sub(r"\bcollaboration\s+about\b", "collaboration", candidate, flags=re.IGNORECASE)
+            candidate = re.sub(r"^(?:(?:and|for|to|about)\s+)+", "", candidate, flags=re.IGNORECASE)
+            candidate = re.sub(r"\b(and|for|to)\b\s*$", "", candidate, flags=re.IGNORECASE)
             candidate = re.sub(r"\s+", " ", candidate).strip()
             if candidate:
                 return _compact_summary(candidate, 24)
-    return _compact_summary(text, 24)
+    fallback = re.sub(noise_re, "", text, flags=re.IGNORECASE)
+    fallback = re.sub(r"\s+", " ", fallback).strip(" .,!?:;")
+    return _compact_summary(fallback or text, 24)
 
 
 async def _fetch_target(user_email: str, mention_tokens: List[str]) -> MentionTargetProfile:

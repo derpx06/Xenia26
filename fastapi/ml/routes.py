@@ -8,9 +8,12 @@ from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 from ml.application.agent.schemas import AgentRequest, AgentResponse, AgentStreamChunk
-from ml.application.agent.streaming import stream_agent_response
-from ml.application.agent.graph import run_agent
 from ml.infrastructure.db.sqlite import get_thread_history, add_message, create_thread, get_all_threads
+
+AGENT_AVAILABLE = False
+AGENT_IMPORT_ERROR = "Agent not initialized"
+run_agent = None
+stream_agent_response = None
 
 SARGE_AVAILABLE = False
 SARGE_IMPORT_ERROR = "SARGE not initialized"
@@ -24,12 +27,30 @@ import asyncio
 router = APIRouter(prefix="/ml", tags=["ML"])
 VOICE_PROFILES_DIR = Path("assets/voice_profiles")
 VOICE_REGISTRY_PATH = VOICE_PROFILES_DIR / "profiles.json"
+AGENT_SYNC_TIMEOUT_SECONDS = int(os.getenv("AGENT_SYNC_TIMEOUT_SECONDS", "45"))
+
+
+def _ensure_agent_loaded() -> bool:
+    global AGENT_AVAILABLE, AGENT_IMPORT_ERROR, run_agent, stream_agent_response
+
+    if AGENT_AVAILABLE and run_agent and stream_agent_response:
+        return True
+
+    try:
+        from ml.application.agent.graph import run_agent as _run_agent
+        from ml.application.agent.streaming import stream_agent_response as _stream_agent_response
+        run_agent = _run_agent
+        stream_agent_response = _stream_agent_response
+        AGENT_AVAILABLE = True
+        AGENT_IMPORT_ERROR = None
+        return True
+    except Exception as e:
+        AGENT_AVAILABLE = False
+        AGENT_IMPORT_ERROR = str(e)
+        return False
 
 
 def _ensure_sarge_loaded() -> bool:
-    """
-    Lazy-load SARGE modules so optional TTS deps cannot break core app startup.
-    """
     global SARGE_AVAILABLE, SARGE_IMPORT_ERROR, run_sarge, stream_sarge, get_tts
 
     if SARGE_AVAILABLE and run_sarge and stream_sarge and get_tts:
@@ -104,6 +125,63 @@ def _sanitize_default_voice_id(voice_id: Optional[str]) -> Optional[str]:
     if not voice_id:
         return None
     return voice_id.strip()
+
+
+async def _build_personalized_fallback_response(message: str, user_email: Optional[str]) -> Dict[str, Any]:
+    """
+    Build a deterministic fallback draft when the full agent pipeline times out/fails.
+    Keeps responses personalized using structured mention context without LLM calls.
+    """
+    from ml.application.agent.helpers import infer_channels_from_instruction
+    from ml.application.agent.mention_intelligence import build_context_injection
+
+    ctx = await build_context_injection(message or "", user_email=user_email or "")
+    target = ctx.target_profile
+    sender = ctx.sender_profile
+    task = ctx.task_intent
+    channels = infer_channels_from_instruction(message or "")
+    channel = channels[0] if channels else (task.channel_hint or "email")
+
+    target_name = target.name or "there"
+    role_company = "professional"
+    if target.role and target.company:
+        role_company = f"{target.role} at {target.company}"
+    elif target.role:
+        role_company = target.role
+    elif target.company:
+        role_company = f"leader at {target.company}"
+
+    interest = (target.interests[0] if target.interests else "").strip()
+    interest_line = f" given your focus on {interest}" if interest else ""
+    topic = task.topic_lock or "our collaboration"
+    sender_name = sender.name or "our team"
+
+    if channel in {"whatsapp", "sms", "instagram_dm"}:
+        draft = (
+            f"Hi {target_name}, reaching out about {topic}. "
+            f"I think this could be relevant for you as {role_company}{interest_line}. "
+            "Open to a quick chat this week?"
+        )
+    else:
+        draft = (
+            f"Hi {target_name},\n\n"
+            f"I’m reaching out regarding {topic}. "
+            f"Given your work as {role_company}{interest_line}, this looks like a strong fit.\n\n"
+            f"I’m {sender_name}, and I’d value a short conversation to explore a practical collaboration path.\n\n"
+            "Would you be open to a quick call next week?"
+        )
+
+    return {
+        "channel": channel,
+        "topic_lock": topic,
+        "target": {
+            "name": target.name,
+            "role": target.role,
+            "company": target.company,
+        },
+        "draft": draft,
+        "fallback": True,
+    }
 
 
 class VoiceProfileUploadRequest(BaseModel):
@@ -206,6 +284,29 @@ def _merge_contact_from_content(result: Dict[str, Any], content: Any, source_url
         if "github.com" in source_url and not result.get("notes"):
             result["notes"] = f"GitHub profile detected: {source_url}"
 
+
+async def _quick_extract_generic_url(url: str) -> Dict[str, Any]:
+    """
+    Lightweight generic extraction to avoid heavy crawler runtime for unsupported domains.
+    """
+    def _fetch() -> Dict[str, Any]:
+        import requests
+        from bs4 import BeautifulSoup
+
+        response = requests.get(url, timeout=12, headers={"User-Agent": "Mozilla/5.0"})
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+        title = (soup.title.string or "").strip() if soup.title and soup.title.string else ""
+        desc = ""
+        desc_tag = soup.find("meta", attrs={"name": "description"}) or soup.find(
+            "meta", attrs={"property": "og:description"}
+        )
+        if desc_tag and desc_tag.get("content"):
+            desc = desc_tag.get("content").strip()
+        return {"title": title, "subtitle": desc, "source_url": url}
+
+    return await asyncio.to_thread(_fetch)
+
 _SIMPLE_QUERIES = {
     "hi",
     "hello",
@@ -278,6 +379,11 @@ async def get_ollama_models():
             status_code=503,
             detail=f"Failed to connect to Ollama service: {str(e)}"
         )
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=503,
+            detail="Ollama CLI is not installed or not on PATH"
+        )
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -288,37 +394,22 @@ async def get_ollama_models():
 @router.post("/scrape/links")
 async def scrape_links(request: LinkScrapeRequest):
     """
-    Scrape one or more URLs using CrawlerDispatcher and return extracted field hints
-    for profile/contact forms.
+    Scrape one or more URLs and return extracted field hints for profile/contact forms.
     """
     try:
-        from ml.application.crawlers.dispatcher import CrawlerDispatcher
-
         links = [_normalize_url(l) for l in request.links if _normalize_url(l).startswith("http")]
         if not links:
             return {"extracted": {}, "results": []}
 
-        dispatcher = (
-            CrawlerDispatcher.build()
-            .register_linkedin()
-            .register_medium()
-            .register_github()
-        )
-
         async def _crawl(url: str):
-            crawler = dispatcher.get_crawler(url)
             try:
-                crawl_input = url
-                # GithubCrawler expects username rather than full URL.
-                if "github.com" in url and crawler.__class__.__name__ in {"GithubProfileCrawler", "GithubCrawler"}:
-                    from urllib.parse import urlparse
-                    parts = [p for p in urlparse(url).path.split("/") if p]
-                    if parts:
-                        crawl_input = parts[0]
-                if hasattr(crawler, "aextract"):
-                    content = await crawler.aextract(crawl_input)
+                normalized = url.lower()
+                if "linkedin.com" in normalized:
+                    content = {"profile": {"ProfileURL": url}}
+                elif "github.com" in normalized:
+                    content = {"profile": {"blog": url}}
                 else:
-                    content = await asyncio.to_thread(crawler.extract, crawl_input)
+                    content = await _quick_extract_generic_url(url)
                 return {"url": url, "ok": True, "content": content}
             except Exception as e:
                 return {"url": url, "ok": False, "error": str(e), "content": None}
@@ -411,6 +502,9 @@ async def agent_chat_stream(request: AgentRequest, http_request: Request):
         }
     """
     try:
+        if not _ensure_agent_loaded():
+            raise HTTPException(status_code=503, detail=f"Agent unavailable: {AGENT_IMPORT_ERROR}")
+
         simple_response = _get_simple_response(request.message)
         if simple_response:
             thread_id = request.thread_id or str(uuid.uuid4())
@@ -553,6 +647,9 @@ async def agent_chat_sync(request: AgentRequest, http_request: Request):
         }
     """
     try:
+        if not _ensure_agent_loaded():
+            raise HTTPException(status_code=503, detail=f"Agent unavailable: {AGENT_IMPORT_ERROR}")
+
         simple_response = _get_simple_response(request.message)
         if simple_response:
             return AgentResponse(
@@ -579,11 +676,31 @@ async def agent_chat_sync(request: AgentRequest, http_request: Request):
             or ""
         ).strip().lower() or None
 
-        result = await run_agent(
-            target_url=target_url,
-            user_instruction=user_instruction,
-            user_email=sender_email
-        )
+        try:
+            result = await asyncio.wait_for(
+                run_agent(
+                    target_url=target_url,
+                    user_instruction=user_instruction,
+                    user_email=sender_email
+                ),
+                timeout=AGENT_SYNC_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            fallback = await _build_personalized_fallback_response(request.message, sender_email)
+            return AgentResponse(
+                response=fallback,
+                tool_calls=[],
+                iterations=0,
+                model=request.model
+            )
+        except Exception:
+            fallback = await _build_personalized_fallback_response(request.message, sender_email)
+            return AgentResponse(
+                response=fallback,
+                tool_calls=[],
+                iterations=0,
+                model=request.model
+            )
         
         # Extract tool calls from messages
         tool_calls = []
@@ -872,7 +989,6 @@ async def upload_sarge_voice_profile(request: VoiceProfileUploadRequest):
         raise HTTPException(status_code=400, detail="Email is required")
     if not request.audio_base64:
         raise HTTPException(status_code=400, detail="Audio payload is required")
-
     if not _ensure_sarge_loaded():
         raise HTTPException(status_code=503, detail=f"SARGE unavailable: {SARGE_IMPORT_ERROR}")
 

@@ -9,7 +9,7 @@ from langchain_core.tools import tool
 import warnings
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=RuntimeWarning, message="This package")
-from duckduckgo_search import DDGS
+    from duckduckgo_search import DDGS
 from loguru import logger
 
 
@@ -65,15 +65,12 @@ async def scrape_article(url: Annotated[str, "The URL of the article/profile to 
     import asyncio
     
     try:
-        from ml.application.crawlers.linkedin import LinkedInCrawler
-        from ml.application.crawlers.github import GithubProfileCrawler
-        from ml.application.crawlers.custom_article import CustomArticleCrawler
-
         parsed = urlparse(url)
         domain = parsed.netloc.lower().replace('www.', '')
-
+        
         # LinkedIn
         if 'linkedin.com' in domain and '/in/' in parsed.path.lower():
+            from ml.application.crawlers.linkedin import LinkedInCrawler
             logger.info("Using LinkedInCrawler")
             crawler = LinkedInCrawler()
             content = await crawler.aextract(link=url)
@@ -83,6 +80,7 @@ async def scrape_article(url: Annotated[str, "The URL of the article/profile to 
         
         # GitHub
         elif 'github.com' in domain:
+            from ml.application.crawlers.github import GithubProfileCrawler
             match = re.search(r'/([^/?]+)', parsed.path)
             if match:
                 username = match.group(1)
@@ -94,6 +92,7 @@ async def scrape_article(url: Annotated[str, "The URL of the article/profile to 
                 return f"✅ GitHub profile {username} scraped successfully"
 
         # Fallback: CustomArticleCrawler
+        from ml.application.crawlers.custom_article import CustomArticleCrawler
         logger.info("Using CustomArticleCrawler")
         crawler = CustomArticleCrawler()
         content = await crawler.aextract(link=url)
