@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Send, Mail, Phone, X, Bot, Loader2, ArrowRight, Sparkles, Zap, MessageSquare, ChevronRight, ChevronLeft, Volume2, StopCircle } from "lucide-react";
+import { Send, Mail, Phone, X, Bot, Loader2, ArrowRight, Sparkles, Zap, MessageSquare, ChevronRight, ChevronLeft, Volume2, StopCircle, Play, Pause, Settings2 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 import { ToolCalls, ToolResult } from "../components/thread/messages/tool-calls";
+import MessageAudioPlayer from "../components/thread/messages/MessageAudioPlayer";
 import { EmailPreviewCard } from "../components/thread/messages/EmailPreviewCard";
 import { WhatsAppPreviewCard } from "../components/thread/messages/WhatsAppPreviewCard";
 import { LinkedInPreviewCard } from "../components/thread/messages/LinkedInPreviewCard";
@@ -112,9 +113,7 @@ export default function OutreachChat() {
   const [activeSendFlow, setActiveSendFlow] = useState(null);
   const [loadingAction, setLoadingAction] = useState(false);
   const [playingAudioMsgId, setPlayingAudioMsgId] = useState(null);
-  const [audioState, setAudioState] = useState("idle"); // idle | playing | paused
   const bottomRef = useRef(null);
-  const activeAudioRef = useRef(null);
 
   // --- MENTIONS STATE ---
   const [contacts, setContacts] = useState([]);
@@ -204,63 +203,7 @@ export default function OutreachChat() {
     }
   }, [streamingContent]);
 
-  // Cleanup currently playing audio when leaving the screen
-  useEffect(() => {
-    return () => {
-      if (activeAudioRef.current) {
-        activeAudioRef.current.pause();
-        activeAudioRef.current = null;
-      }
-    };
-  }, []);
-
-  const playAudioForMessage = (audioUrl, msgId) => {
-    if (!audioUrl) return;
-
-    const fullUrl = audioUrl.startsWith("http") ? audioUrl : `${API_BASE_URL}${audioUrl}`;
-
-    // Toggle play/pause if same message is active
-    if (activeAudioRef.current && playingAudioMsgId === msgId) {
-      if (!activeAudioRef.current.paused) {
-        activeAudioRef.current.pause();
-        setAudioState("paused");
-      } else {
-        activeAudioRef.current.play();
-        setAudioState("playing");
-      }
-      return;
-    }
-
-    // Stop previous audio if another message starts
-    if (activeAudioRef.current) {
-      activeAudioRef.current.pause();
-      activeAudioRef.current = null;
-    }
-
-    const audio = new Audio(fullUrl);
-    activeAudioRef.current = audio;
-    setPlayingAudioMsgId(msgId);
-    setAudioState("playing");
-
-    audio.onended = () => {
-      setAudioState("idle");
-      setPlayingAudioMsgId(null);
-      activeAudioRef.current = null;
-    };
-    audio.onpause = () => {
-      if (!audio.ended) setAudioState("paused");
-    };
-    audio.onplay = () => {
-      setAudioState("playing");
-    };
-
-    audio.play().catch((err) => {
-      console.error("Audio playback failed:", err);
-      setAudioState("idle");
-      setPlayingAudioMsgId(null);
-      activeAudioRef.current = null;
-    });
-  };
+  // No manual audio cleanup needed as components handle it now
 
   // --- ACTIONS (Email/WhatsApp/LinkedIn) ---
   const handleSendAction = async (msgIndex, content, type) => {
@@ -367,8 +310,6 @@ export default function OutreachChat() {
           ));
         }
 
-        // Play immediately and trigger in-chat audio animation
-        playAudioForMessage(data.audio_url, msgId || `manual-${Date.now()}`);
       }
     } catch (err) {
       console.error("Audio generation failed:", err);
@@ -913,86 +854,83 @@ export default function OutreachChat() {
                     {/* ACTIONS */}
                     {msg.role === 'assistant' && (
                       <div className="mt-3 w-full pl-1">
-                        <div className="mb-3 p-2 rounded-xl border border-white/10 bg-[#0f0f0f]/80 flex flex-wrap items-center gap-2">
-                          <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Audio Sample</span>
-                          <select
-                            value={voiceMode}
-                            onChange={(e) => setVoiceMode(e.target.value)}
-                            disabled={!ttsAvailable}
-                            className="bg-[#0A0A0A] border border-white/10 rounded-lg px-2 py-1 text-[11px] text-zinc-200 disabled:opacity-50"
-                          >
-                            <option value="auto">Auto (default saved)</option>
-                            <option value="default">Model default voice</option>
-                            <option value="custom">Saved custom sample</option>
-                          </select>
-
-                          <select
-                            value={selectedCustomVoiceId}
-                            onChange={(e) => setSelectedCustomVoiceId(e.target.value)}
-                            disabled={voiceMode === "default" || !ttsAvailable}
-                            className="bg-[#0A0A0A] border border-white/10 rounded-lg px-2 py-1 text-[11px] text-zinc-200 disabled:opacity-50"
-                          >
-                            <option value="">Select saved sample</option>
-                            {customVoices.map((voice) => (
-                              <option key={voice.id} value={voice.id}>
-                                {voice.name} ({voice.personality || "professional"})
-                              </option>
-                            ))}
-                          </select>
-
-                          <select
-                            value={selectedDefaultVoice}
-                            onChange={(e) => setSelectedDefaultVoice(e.target.value)}
-                            disabled={voiceMode === "custom" || !ttsAvailable}
-                            className="bg-[#0A0A0A] border border-white/10 rounded-lg px-2 py-1 text-[11px] text-zinc-200 disabled:opacity-50"
-                          >
-                            {defaultVoices.length === 0 ? (
-                              <option value="">No model voices</option>
-                            ) : (
-                              defaultVoices.map((voice) => (
-                                <option key={voice.id} value={voice.id}>
-                                  {voice.name}
-                                </option>
-                              ))
-                            )}
-                          </select>
-
-                          {!ttsAvailable && (
-                            <span className="text-[11px] text-red-400">
-                              {ttsError || "TTS unavailable on backend"}
-                            </span>
+                        {/* TTS CONTROLS & PLAYER */}
+                        <div className="mb-2">
+                          {/* Audio Player (if exists) */}
+                          {msg.generated_content?.audio_path && (
+                            <MessageAudioPlayer
+                              src={msg.generated_content.audio_path.startsWith("http")
+                                ? msg.generated_content.audio_path
+                                : `http://localhost:8000${msg.generated_content.audio_path}`}
+                              msgId={msg.id || i}
+                              activeId={playingAudioMsgId}
+                              onPlay={(id) => setPlayingAudioMsgId(id)}
+                              voiceName="Voice Message"
+                              voiceType={voiceMode === 'custom' ? 'Custom Voice' : voiceMode === 'default' ? 'Model Voice' : 'Auto Voice'}
+                            />
                           )}
+
+                          {/* Voice Settings Toggle */}
+                          <details className="group/settings">
+                            <summary className="list-none cursor-pointer flex items-center gap-2 text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors bg-black/20 w-fit px-2 py-1 rounded-lg">
+                              <Settings2 className="w-3 h-3" />
+                              <span>Configure Voice</span>
+                              <ChevronRight className="w-3 h-3 transition-transform group-open/settings:rotate-90" />
+                            </summary>
+
+                            <div className="mt-2 p-3 rounded-xl border border-white/5 bg-[#0f0f0f] flex flex-col gap-2 animate-in slide-in-from-top-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <select
+                                  value={voiceMode}
+                                  onChange={(e) => setVoiceMode(e.target.value)}
+                                  disabled={!ttsAvailable}
+                                  className="flex-1 min-w-[120px] bg-black border border-white/10 rounded-lg px-2 py-1.5 text-xs text-zinc-300 focus:ring-1 focus:ring-purple-500 outline-none disabled:opacity-50"
+                                >
+                                  <option value="auto">Auto (Default)</option>
+                                  <option value="default">Model Default</option>
+                                  <option value="custom">Custom Voice</option>
+                                </select>
+
+                                <select
+                                  value={selectedCustomVoiceId}
+                                  onChange={(e) => setSelectedCustomVoiceId(e.target.value)}
+                                  disabled={voiceMode === "default" || !ttsAvailable}
+                                  className={`flex-1 min-w-[120px] bg-black border border-white/10 rounded-lg px-2 py-1.5 text-xs text-zinc-300 focus:ring-1 focus:ring-purple-500 outline-none disabled:opacity-50 ${voiceMode === "default" ? "hidden" : "block"}`}
+                                >
+                                  <option value="">Select Custom Voice</option>
+                                  {customVoices.map((voice) => (
+                                    <option key={voice.id} value={voice.id}>
+                                      {voice.name} ({voice.personality || "Professional"})
+                                    </option>
+                                  ))}
+                                </select>
+
+                                <select
+                                  value={selectedDefaultVoice}
+                                  onChange={(e) => setSelectedDefaultVoice(e.target.value)}
+                                  disabled={voiceMode === "custom" || !ttsAvailable}
+                                  className={`flex-1 min-w-[120px] bg-black border border-white/10 rounded-lg px-2 py-1.5 text-xs text-zinc-300 focus:ring-1 focus:ring-purple-500 outline-none disabled:opacity-50 ${voiceMode === "custom" ? "hidden" : "block"}`}
+                                >
+                                  {defaultVoices.length === 0 ? (
+                                    <option value="">No Model Voices</option>
+                                  ) : (
+                                    defaultVoices.map((voice) => (
+                                      <option key={voice.id} value={voice.id}>
+                                        {voice.name}
+                                      </option>
+                                    ))
+                                  )}
+                                </select>
+                              </div>
+
+                              {!ttsAvailable && (
+                                <div className="text-[10px] text-red-400/80 px-1 border-l-2 border-red-500/30 pl-2">
+                                  {ttsError || "Text-to-Speech service unavailable"}
+                                </div>
+                              )}
+                            </div>
+                          </details>
                         </div>
-
-                        {msg.generated_content?.audio_path && (
-                          <div className="mb-3 p-3 rounded-xl border border-cyan-500/20 bg-cyan-500/5 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <button
-                                onClick={() => playAudioForMessage(msg.generated_content.audio_path, msg.id || i)}
-                                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-white/10 bg-black/40 hover:bg-black/60 transition-colors"
-                              >
-                                {playingAudioMsgId === (msg.id || i) && audioState === "playing" ? "Pause Audio" : "Play Audio"}
-                              </button>
-                              <span className="text-xs text-cyan-300">TTS Voice</span>
-                            </div>
-
-                            <div className="h-6 flex items-end gap-1">
-                              {[0, 1, 2, 3, 4, 5].map((bar) => (
-                                <div
-                                  key={bar}
-                                  className="sound-bar"
-                                  style={{
-                                    height: `${10 + ((bar % 3) * 5)}px`,
-                                    animation: playingAudioMsgId === (msg.id || i) && audioState === "playing"
-                                      ? `soundbar ${0.6 + (bar * 0.08)}s ease-in-out infinite`
-                                      : "none",
-                                    opacity: playingAudioMsgId === (msg.id || i) && audioState === "playing" ? 1 : 0.3
-                                  }}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        )}
 
                         {(activeSendFlow?.msgIndex === i || msg.active_node === 'WRITER') ? (
                           <div className="w-full mt-4 animate-in slide-in-from-bottom-2 duration-300">

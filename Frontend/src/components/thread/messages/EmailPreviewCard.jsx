@@ -102,8 +102,6 @@ export function EmailPreviewCard({ content, onSend, onCancel, defaultTo = "", pr
                             </span>
                             <div className="flex items-center gap-3 text-zinc-400">
                                 <Minimize2 className="w-4 h-4 cursor-pointer hover:text-white" onClick={() => setIsExpanded(false)} />
-                                <Maximize2 className="w-4 h-4 cursor-pointer hover:text-white" />
-                                <X className="w-4 h-4 cursor-pointer hover:text-white" onClick={onCancel} />
                             </div>
                         </div>
 
