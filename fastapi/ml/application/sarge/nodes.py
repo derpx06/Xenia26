@@ -37,10 +37,22 @@ def get_kb():
 # Global TTS singleton to avoid reloading models (DANGEROUS: RAM HEAVY)
 _tts = None
 
+def _refresh_tts_import_if_needed():
+    global XTTSEngine, _TTS_IMPORT_ERROR
+    if XTTSEngine is not None:
+        return
+    try:
+        from .tts_engine import XTTSEngine as _XTTSEngine
+        XTTSEngine = _XTTSEngine
+        _TTS_IMPORT_ERROR = None
+    except Exception as e:
+        _TTS_IMPORT_ERROR = e
+
 def get_tts():
     global _tts
+    _refresh_tts_import_if_needed()
     if XTTSEngine is None:
-        raise RuntimeError(f"TTS unavailable: {_TTS_IMPORT_ERROR}")
+        raise RuntimeError(str(_TTS_IMPORT_ERROR))
 
     if _tts is None:
         # Check if assets/speaker.wav exists for cloning, otherwise use default

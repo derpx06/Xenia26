@@ -122,6 +122,8 @@ export default function Profile() {
     const [voiceStatus, setVoiceStatus] = useState("");
     const [voiceSaving, setVoiceSaving] = useState(false);
     const [voiceTesting, setVoiceTesting] = useState(false);
+    const [ttsAvailable, setTtsAvailable] = useState(true);
+    const [ttsError, setTtsError] = useState("");
     const [voiceProfileName, setVoiceProfileName] = useState("My Voice");
     const [voicePersonality, setVoicePersonality] = useState("professional");
     const [savedVoiceProfiles, setSavedVoiceProfiles] = useState([]);
@@ -213,6 +215,12 @@ export default function Profile() {
             const res = await fetch(`${FASTAPI_URL}/ml/agent/sarge/voices?email=${encodeURIComponent(email)}`);
             if (!res.ok) return;
             const data = await res.json();
+            const available = data?.tts_available !== false;
+            setTtsAvailable(available);
+            setTtsError(data?.tts_error || "");
+            if (!available) {
+                setVoiceStatus(data?.tts_error || "TTS unavailable on backend.");
+            }
             const voices = data.custom_voices || [];
             setSavedVoiceProfiles(voices);
             const defaultVoice = voices.find(v => v.is_default);
@@ -507,6 +515,10 @@ export default function Profile() {
             alert("Please login first.");
             return;
         }
+        if (!ttsAvailable) {
+            setVoiceStatus(ttsError || "TTS unavailable on backend.");
+            return;
+        }
 
         try {
             setVoiceTesting(true);
@@ -534,7 +546,7 @@ export default function Profile() {
             }
         } catch (error) {
             console.error("Voice test error:", error);
-            setVoiceStatus("Voice preview failed. Re-record and try again.");
+            setVoiceStatus(error?.message || "Voice preview failed. Re-record and try again.");
         } finally {
             setVoiceTesting(false);
         }
@@ -844,7 +856,7 @@ export default function Profile() {
                                                     <div className="mt-4 flex flex-wrap items-center gap-3">
                                                         <button
                                                             onClick={testClonedVoice}
-                                                            disabled={voiceTesting || (!savedAudioUrl && !audioUrl)}
+                                                            disabled={voiceTesting || (!savedAudioUrl && !audioUrl) || !ttsAvailable}
                                                             className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                                         >
                                                             {voiceTesting ? "Testing..." : "Test Cloned Voice"}

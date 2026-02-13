@@ -129,6 +129,8 @@ export default function OutreachChat() {
   const [voiceMode, setVoiceMode] = useState("auto"); // auto | default | custom
   const [selectedDefaultVoice, setSelectedDefaultVoice] = useState("");
   const [selectedCustomVoiceId, setSelectedCustomVoiceId] = useState("");
+  const [ttsAvailable, setTtsAvailable] = useState(false);
+  const [ttsError, setTtsError] = useState("");
 
 
   // Persist messages to local storage
@@ -160,8 +162,15 @@ export default function OutreachChat() {
       try {
         const userEmail = localStorage.getItem("userEmail");
         const res = await fetch(`${API_BASE_URL}/ml/agent/sarge/voices?email=${encodeURIComponent(userEmail || "")}`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          setTtsAvailable(false);
+          setTtsError(`TTS unavailable (HTTP ${res.status})`);
+          return;
+        }
         const data = await res.json();
+        const available = data?.tts_available !== false;
+        setTtsAvailable(available);
+        setTtsError(data?.tts_error || "");
         const defaults = data.default_voices || [];
         const customs = data.custom_voices || [];
         setDefaultVoices(defaults);
@@ -171,6 +180,8 @@ export default function OutreachChat() {
         if (defaultCustom) setSelectedCustomVoiceId(defaultCustom.id);
         if (defaults.length > 0) setSelectedDefaultVoice(defaults[0].id);
       } catch (error) {
+        setTtsAvailable(false);
+        setTtsError("TTS unavailable: failed to connect to backend");
         console.error("Failed to fetch voice options:", error);
       }
     };
@@ -319,8 +330,12 @@ export default function OutreachChat() {
 
   const handleGenerateAudio = async (text, msgId = null) => {
     if (!text) return;
-    setLoadingAction(true);
+    if (!ttsAvailable) {
+      alert(ttsError || "TTS is unavailable on backend.");
+      return;
+    }
     try {
+      setLoadingAction(true);
       const userEmail = localStorage.getItem("userEmail");
       const selectedCustomVoice = customVoices.find((v) => v.id === selectedCustomVoiceId);
       if (voiceMode === "custom" && !selectedCustomVoiceId) {
@@ -341,6 +356,9 @@ export default function OutreachChat() {
         })
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.detail || `Audio generation failed (${res.status})`);
+      }
       if (data.audio_url) {
         // If we have a msgId, update the message with the new audio URL
         if (msgId) {
@@ -354,6 +372,7 @@ export default function OutreachChat() {
       }
     } catch (err) {
       console.error("Audio generation failed:", err);
+      alert(err?.message || "Audio generation failed");
     } finally {
       setLoadingAction(false);
     }
@@ -899,7 +918,8 @@ export default function OutreachChat() {
                           <select
                             value={voiceMode}
                             onChange={(e) => setVoiceMode(e.target.value)}
-                            className="bg-[#0A0A0A] border border-white/10 rounded-lg px-2 py-1 text-[11px] text-zinc-200"
+                            disabled={!ttsAvailable}
+                            className="bg-[#0A0A0A] border border-white/10 rounded-lg px-2 py-1 text-[11px] text-zinc-200 disabled:opacity-50"
                           >
                             <option value="auto">Auto (default saved)</option>
                             <option value="default">Model default voice</option>
@@ -909,7 +929,7 @@ export default function OutreachChat() {
                           <select
                             value={selectedCustomVoiceId}
                             onChange={(e) => setSelectedCustomVoiceId(e.target.value)}
-                            disabled={voiceMode === "default"}
+                            disabled={voiceMode === "default" || !ttsAvailable}
                             className="bg-[#0A0A0A] border border-white/10 rounded-lg px-2 py-1 text-[11px] text-zinc-200 disabled:opacity-50"
                           >
                             <option value="">Select saved sample</option>
@@ -923,7 +943,7 @@ export default function OutreachChat() {
                           <select
                             value={selectedDefaultVoice}
                             onChange={(e) => setSelectedDefaultVoice(e.target.value)}
-                            disabled={voiceMode === "custom"}
+                            disabled={voiceMode === "custom" || !ttsAvailable}
                             className="bg-[#0A0A0A] border border-white/10 rounded-lg px-2 py-1 text-[11px] text-zinc-200 disabled:opacity-50"
                           >
                             {defaultVoices.length === 0 ? (
@@ -936,6 +956,12 @@ export default function OutreachChat() {
                               ))
                             )}
                           </select>
+
+                          {!ttsAvailable && (
+                            <span className="text-[11px] text-red-400">
+                              {ttsError || "TTS unavailable on backend"}
+                            </span>
+                          )}
                         </div>
 
                         {msg.generated_content?.audio_path && (
@@ -1055,7 +1081,12 @@ export default function OutreachChat() {
                               {/* Using Map icon temporarily for LinkedIn or text, reusing generic icon if needed, but text is clearer */}
                               <span className="font-bold text-[10px] bg-blue-600 text-white px-1 rounded">in</span> LinkedIn
                             </button>
-                            <button onClick={() => handleGenerateAudio(msg.content, msg.id)} className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
+                            <button
+                              onClick={() => handleGenerateAudio(msg.content, msg.id)}
+                              disabled={!ttsAvailable || loadingAction}
+                              title={!ttsAvailable ? (ttsError || "TTS unavailable on backend") : ""}
+                              className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
                               <Volume2 className="w-3 h-3" /> Audio
                             </button>
                           </div>

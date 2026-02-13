@@ -1036,6 +1036,8 @@ async def sarge_voice(request: SargeVoiceRequest):
             "voice_profile_id": profile_record.get("id") if profile_record else None,
             "personality": profile_record.get("personality") if profile_record else request.personality,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1109,5 +1111,7 @@ async def upload_sarge_voice_profile(request: VoiceProfileUploadRequest):
                 "is_default": rec["is_default"],
             },
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process voice profile: {str(e)}")

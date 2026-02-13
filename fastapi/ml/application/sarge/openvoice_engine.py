@@ -1,6 +1,7 @@
 
 import sys
 import os
+import types
 import torch
 from loguru import logger
 
@@ -8,6 +9,53 @@ from loguru import logger
 lib_path = os.path.join(os.path.dirname(__file__), 'openvoice_lib')
 if lib_path not in sys.path:
     sys.path.append(lib_path)
+
+def _ensure_unidic_compat():
+    """
+    MeCab prefers `unidic` over `unidic_lite` when both are importable.
+    In partially installed environments, `unidic` may exist but miss DICDIR,
+    which breaks Melo import.
+    """
+    try:
+        import unidic  # type: ignore
+        dicdir = getattr(unidic, "DICDIR", None)
+        if dicdir and os.path.exists(os.path.join(dicdir, "mecabrc")):
+            return
+    except Exception:
+        pass
+
+    try:
+        import unidic_lite  # type: ignore
+        module = sys.modules.get("unidic")
+        if module is None:
+            module = types.ModuleType("unidic")
+            sys.modules["unidic"] = module
+        module.DICDIR = unidic_lite.DICDIR
+    except Exception:
+        # If this fails, Melo import will raise a clear dependency error below.
+        pass
+
+def _ensure_nltk_assets():
+    """
+    g2p_en depends on NLTK corpora that are missing in fresh envs.
+    Download lazily once to avoid runtime synthesis crashes.
+    """
+    resources = [
+        ("taggers/averaged_perceptron_tagger_eng", "averaged_perceptron_tagger_eng"),
+        ("taggers/averaged_perceptron_tagger", "averaged_perceptron_tagger"),
+        ("corpora/cmudict", "cmudict"),
+    ]
+    try:
+        import nltk  # type: ignore
+        for lookup_path, package_name in resources:
+            try:
+                nltk.data.find(lookup_path)
+            except LookupError:
+                nltk.download(package_name, quiet=True)
+    except Exception as e:
+        logger.warning(f"TTS: NLTK asset check skipped - {e}")
+
+_ensure_unidic_compat()
 
 try:
     from openvoice import se_extractor
@@ -36,6 +84,7 @@ class OpenVoiceEngine:
         )
         
         # Load Base TTS (MeloTTS)
+        _ensure_nltk_assets()
         self.language = language.upper()
         self.base_model = TTS(language=self.language, device=self.device)
         self.speaker_ids = self.base_model.hps.data.spk2id
