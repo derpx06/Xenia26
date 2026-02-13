@@ -7,11 +7,13 @@ const SENDER_EMAIL = process.env.EMAIL_USER;
 const APP_PASSWORD = process.env.EMAIL_PASS; // The 16-digit code, NOT your normal password
 
 router.post("/email", async (req, res) => {
-    const { to, subject, text } = req.body;
+    const { to, subject, text, attachments } = req.body;
+
+    console.log(`📧 Sending email to: ${to} with ${attachments?.length || 0} attachments`);
 
     // Validation
-    if (!to || !text) {
-        return res.status(400).json({ message: "Missing 'to' or 'text' fields" });
+    if (!to || (!text && (!attachments || attachments.length === 0))) {
+        return res.status(400).json({ message: "Missing 'to' or content ('text'/'attachments')" });
     }
 
     try {
@@ -29,7 +31,10 @@ router.post("/email", async (req, res) => {
             from: `"Outreach AI" <${SENDER_EMAIL}>`, // Shows as "Outreach AI" in inbox
             to: to,
             subject: subject || "Quick Question",
-            text: text, // The body text from the AI
+            text: text || " ",
+            attachments: attachments ? attachments.map((att, index) => ({
+                path: att // Nodemailer handles data URIs directly if passed as 'path' 
+            })) : []
         };
 
         // 3. Send It

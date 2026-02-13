@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { X, Send, Image, Paperclip, MoreHorizontal, Video, Star, Loader2, ChevronUp, Smile, Volume2, Maximize2, Minimize2, Linkedin } from 'lucide-react';
 
-export function LinkedInPreviewCard({ content, onSend, onCancel, defaultRecipient = "", previewMode = false, onProceed, audioPath, onConvertAudio, isAudioLoading }) {
+export function LinkedInPreviewCard({ content, onSend, onCancel, defaultRecipient = "", previewMode = false, onProceed, audioPath, onConvertAudio, isAudioLoading, attachments = [] }) {
     const [recipient, setRecipient] = useState(defaultRecipient);
     const [message, setMessage] = useState("");
     const [isSending, setIsSending] = useState(false);
@@ -43,10 +43,20 @@ export function LinkedInPreviewCard({ content, onSend, onCancel, defaultRecipien
                     <div className="scale-[0.55] origin-top-left w-[182%] h-[182%] p-4">
                         <div className="bg-[#0A66C2] rounded-2xl shadow-none border-none">
                             <div className="p-1">
+                                {/* Attachment Thumbnail */}
+                                {attachments.length > 0 && (
+                                    <div className="mb-2 mx-4 mt-4">
+                                        <img
+                                            src={attachments[0]}
+                                            alt="LinkedIn Attachment"
+                                            className="w-full h-32 rounded-lg object-cover opacity-80"
+                                        />
+                                    </div>
+                                )}
                                 <textarea
                                     readOnly
                                     value={message}
-                                    className="w-full min-h-[300px] bg-transparent text-white placeholder-blue-200 outline-none resize-none p-6 text-lg leading-relaxed font-medium"
+                                    className="w-full min-h-[200px] bg-transparent text-white placeholder-blue-200 outline-none resize-none px-6 pb-6 pt-2 text-lg leading-relaxed font-medium"
                                     placeholder="Type your LinkedIn message..."
                                 />
                             </div>
@@ -91,10 +101,20 @@ export function LinkedInPreviewCard({ content, onSend, onCancel, defaultRecipien
                     <div className="w-full font-sans">
                         <div className="bg-[#0A66C2] rounded-2xl shadow-2xl overflow-hidden border border-[#004182]">
                             <div className="p-1">
+                                {/* Attachment Image */}
+                                {attachments.length > 0 && (
+                                    <div className="mb-2">
+                                        <img
+                                            src={attachments[0]}
+                                            alt="LinkedIn Attachment"
+                                            className="w-full h-auto rounded-lg object-cover max-h-60 border border-white/10"
+                                        />
+                                    </div>
+                                )}
                                 <textarea
                                     value={message}
                                     onChange={(e) => setMessage(e.target.value)}
-                                    className="w-full min-h-[300px] bg-transparent text-white placeholder-blue-200 outline-none resize-none p-6 text-lg leading-relaxed font-medium"
+                                    className="w-full min-h-[100px] max-h-[400px] bg-transparent text-white placeholder-blue-200 outline-none resize-none p-2 text-lg leading-relaxed font-medium"
                                     placeholder="Type your LinkedIn message..."
                                 />
                             </div>

@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { X, Send, Phone, Video, Search, MoreVertical, Smile, Paperclip, Mic, Loader2, ArrowLeft, ArrowRight, Volume2, Maximize2, Minimize2, MessageSquare } from 'lucide-react';
 
-export function WhatsAppPreviewCard({ content, onSend, onCancel, defaultPhone = "", previewMode = false, onProceed, audioPath, onConvertAudio, isAudioLoading }) {
+export function WhatsAppPreviewCard({ content, onSend, onCancel, defaultPhone = "", previewMode = false, onProceed, audioPath, onConvertAudio, isAudioLoading, attachments = [] }) {
     const [phone, setPhone] = useState(defaultPhone);
     const [message, setMessage] = useState("");
     const [isSending, setIsSending] = useState(false);
@@ -53,10 +53,21 @@ export function WhatsAppPreviewCard({ content, onSend, onCancel, defaultPhone = 
                     {/* Scaled Content (Approx 0.6x) */}
                     <div className="scale-[0.6] origin-top-left w-[166%] h-[166%] p-4">
                         <div className="bg-[#005c4b] w-full rounded-xl rounded-tr-none shadow-md overflow-hidden relative border border-[#004a3c]">
+                            {/* Attachment Thumbnail */}
+                            {attachments.length > 0 && (
+                                <div className="mb-2 mx-6 mt-6">
+                                    <img
+                                        src={attachments[0]}
+                                        alt="WhatsApp Media"
+                                        className="w-full h-32 rounded-lg object-cover opacity-80"
+                                    />
+                                </div>
+                            )}
+
                             <textarea
                                 readOnly
                                 value={message}
-                                className="w-full min-h-[300px] bg-transparent text-zinc-100 placeholder-emerald-200/50 outline-none resize-none p-6 text-lg leading-relaxed font-medium"
+                                className="w-full min-h-[200px] bg-transparent text-zinc-100 placeholder-emerald-200/50 outline-none resize-none px-6 pb-6 pt-2 text-lg leading-relaxed font-medium"
                                 placeholder="Type a WhatsApp message..."
                             />
                             {/* Time tick */}
@@ -114,10 +125,20 @@ export function WhatsAppPreviewCard({ content, onSend, onCancel, defaultPhone = 
                             <div className="p-4 flex flex-col items-end">
                                 {/* The Message Bubble itself */}
                                 <div className="bg-[#005c4b] w-full rounded-xl rounded-tr-none shadow-md overflow-hidden relative border border-[#004a3c]">
+                                    {/* Attachment Image */}
+                                    {attachments.length > 0 && (
+                                        <div className="mb-2">
+                                            <img
+                                                src={attachments[0]}
+                                                alt="WhatsApp Media"
+                                                className="w-full h-auto rounded-lg object-cover max-h-60"
+                                            />
+                                        </div>
+                                    )}
                                     <textarea
                                         value={message}
                                         onChange={(e) => setMessage(e.target.value)}
-                                        className="w-full min-h-[300px] bg-transparent text-zinc-100 placeholder-emerald-200/50 outline-none resize-none p-6 text-lg leading-relaxed font-medium"
+                                        className="w-full min-h-[100px] max-h-[400px] bg-transparent text-zinc-100 placeholder-emerald-200/50 outline-none resize-none p-2 text-lg leading-relaxed font-medium"
                                         placeholder="Type a WhatsApp message..."
                                     />
                                     {/* Time tick */}

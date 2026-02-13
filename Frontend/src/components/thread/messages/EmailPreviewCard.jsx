@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { X, Minimize2, Maximize2, Paperclip, Link, Smile, User, MoreVertical, Trash2, Send, Loader2, ArrowRight, Volume2, Mail } from 'lucide-react';
 
-export function EmailPreviewCard({ content, onSend, onCancel, defaultTo = "", previewMode = false, onProceed, audioPath, onConvertAudio, isAudioLoading }) {
+export function EmailPreviewCard({ content, onSend, onCancel, defaultTo = "", previewMode = false, onProceed, audioPath, onConvertAudio, isAudioLoading, attachments = [] }) {
     const [to, setTo] = useState(defaultTo);
     const [subject, setSubject] = useState("");
     const [body, setBody] = useState("");
@@ -72,6 +72,14 @@ export function EmailPreviewCard({ content, onSend, onCancel, defaultTo = "", pr
                             <div className="text-zinc-400 text-sm whitespace-pre-wrap mt-2 line-clamp-6">
                                 {body || "Drafting email content..."}
                             </div>
+
+                            {/* Attachment Indicator */}
+                            {attachments.length > 0 && (
+                                <div className="mt-3 flex items-center gap-2 px-2 py-1 bg-zinc-900/50 rounded-lg w-fit border border-zinc-800">
+                                    <Paperclip className="w-3 h-3 text-zinc-500" />
+                                    <span className="text-[10px] text-zinc-400 font-medium">{attachments.length} Image{attachments.length !== 1 ? 's' : ''} attached</span>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -128,7 +136,6 @@ export function EmailPreviewCard({ content, onSend, onCancel, defaultTo = "", pr
                                 />
                             </div>
 
-                            {/* Body */}
                             <div className="py-2 min-h-[200px]">
                                 <textarea
                                     value={body}
@@ -136,6 +143,30 @@ export function EmailPreviewCard({ content, onSend, onCancel, defaultTo = "", pr
                                     className="w-full h-full min-h-[200px] bg-transparent outline-none text-sm resize-none text-zinc-300 leading-relaxed custom-scrollbar placeholder-zinc-600"
                                 />
                             </div>
+
+                            {/* Attachments */}
+                            {attachments.length > 0 && (
+                                <div className="border-t border-zinc-800 pt-3 mt-2">
+                                    <div className="text-zinc-500 text-xs font-medium mb-2 flex items-center gap-2">
+                                        <Paperclip className="w-3 h-3" />
+                                        {attachments.length} Attachment{attachments.length !== 1 ? 's' : ''}
+                                    </div>
+                                    <div className="flex gap-2 overflow-x-auto pb-2">
+                                        {attachments.map((src, i) => (
+                                            <div key={i} className="relative group shrink-0">
+                                                <img
+                                                    src={src}
+                                                    alt={`Attachment ${i + 1}`}
+                                                    className="h-20 w-auto rounded-lg border border-zinc-700 bg-zinc-900 object-cover"
+                                                />
+                                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
+                                                    <Maximize2 className="w-4 h-4 text-white" />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {/* Footer / Toolbar */}
