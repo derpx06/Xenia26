@@ -1,20 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Send, Mail, Phone, X, Bot, Loader2, ArrowRight, Sparkles, Zap, MessageSquare, ChevronRight, ChevronLeft, Volume2, StopCircle, Play, Pause, Settings2, Paperclip } from "lucide-react";
+import { Send, Mail, Phone, X, Loader2, Sparkles, ChevronRight, ChevronLeft, Volume2, Settings2, Paperclip } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import MarkdownRenderer from "../components/MarkdownRenderer";
-import { ToolCalls, ToolResult } from "../components/thread/messages/tool-calls";
 import MessageAudioPlayer from "../components/thread/messages/MessageAudioPlayer";
 import { EmailPreviewCard } from "../components/thread/messages/EmailPreviewCard";
 import { WhatsAppPreviewCard } from "../components/thread/messages/WhatsAppPreviewCard";
 import { LinkedInPreviewCard } from "../components/thread/messages/LinkedInPreviewCard";
 import ContactInputStep from "../components/ContactInputStep";
-
-
-// --- FRIEND'S ARCHITECTURE IMPORTS ---
-import { Thread } from "../components/thread/Thread";
-import { StreamProvider } from "../providers/Stream";
-import { ThreadProvider } from "../providers/Thread";
-import { ArtifactProvider } from "../components/thread/artifact";
 
 const CarouselContainer = ({ children }) => {
   const scrollRef = useRef(null);
@@ -1288,7 +1280,7 @@ export default function OutreachChat() {
                     <button
                       onClick={sendMessage}
                       className="p-3 rounded-xl bg-purple-600 text-white hover:bg-purple-500 transition-all shadow-lg shadow-purple-900/20"
-                      disabled={isStreaming || !input.trim()}
+                      disabled={isStreaming || (!input.trim() && !selectedImage)}
                     >
                       {isStreaming ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                     </button>
