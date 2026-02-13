@@ -281,6 +281,16 @@ def _compact_summary(text: str, max_words: int) -> str:
     return _truncate_words(cleaned, max_words)
 
 
+def _fallback_name_from_email(user_email: str) -> str:
+    if not user_email:
+        return ""
+    local = user_email.split("@", 1)[0]
+    local = re.sub(r"[^a-zA-Z0-9]+", " ", local).strip()
+    if not local:
+        return ""
+    return " ".join(part.capitalize() for part in local.split())
+
+
 def _extract_target_profile(contact_doc: Optional[Dict[str, Any]], mention_tokens: List[str]) -> MentionTargetProfile:
     if not contact_doc:
         fallback = mention_tokens[0] if mention_tokens else ""
@@ -306,9 +316,16 @@ def _extract_target_profile(contact_doc: Optional[Dict[str, Any]], mention_token
     )
 
 
-def _extract_sender_profile(sender_doc: Optional[Dict[str, Any]]) -> MentionSenderProfile:
+def _extract_sender_profile(sender_doc: Optional[Dict[str, Any]], user_email: str = "") -> MentionSenderProfile:
     if not sender_doc:
-        return MentionSenderProfile()
+        fallback_name = _fallback_name_from_email(user_email)
+        return MentionSenderProfile(
+            name=fallback_name,
+            value_proposition=(
+                f"{fallback_name} is reaching out with a focused and relevant collaboration proposal."
+                if fallback_name else ""
+            )
+        )
 
     bio = (sender_doc.get("bio") or "").strip()
     tone, _, _ = _infer_tone_language_traits(bio)
@@ -414,7 +431,7 @@ async def _fetch_sender(user_email: str) -> MentionSenderProfile:
     if not user_email:
         return MentionSenderProfile()
     sender_doc = await asyncio.to_thread(_sender_doc_for_email, user_email)
-    return _extract_sender_profile(sender_doc)
+    return _extract_sender_profile(sender_doc, user_email=user_email)
 
 
 async def _extract_task(clean_instruction: str, topic_lock_hint: Optional[str]) -> MentionTaskIntent:

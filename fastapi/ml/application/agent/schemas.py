@@ -149,6 +149,10 @@ class AgentRequest(BaseModel):
         default=None,
         description="Authenticated sender email for @mention context lookup"
     )
+    sender_name: Optional[str] = Field(
+        default=None,
+        description="Authenticated sender display name for personalization fallback"
+    )
     conversation_history: List[Message] = Field(
         default_factory=list,
         description="Previous conversation messages"

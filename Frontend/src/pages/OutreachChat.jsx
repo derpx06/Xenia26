@@ -288,6 +288,12 @@ export default function OutreachChat() {
     return Object.keys(sections).length ? sections : null;
   };
 
+  const hasStructuredChannelContent = (msg) => {
+    const gc = msg?.generated_content;
+    if (!gc) return false;
+    return Boolean(gc.email || gc.whatsapp || gc.sms || gc.linkedin || gc.instagram);
+  };
+
   const sendMessage = async () => {
     if (!input.trim()) return;
     const originalInput = input;
@@ -326,16 +332,22 @@ export default function OutreachChat() {
 
     try {
       const userEmail = localStorage.getItem("userEmail") || "";
+      const senderName =
+        localStorage.getItem("userName") ||
+        localStorage.getItem("name") ||
+        "";
       const response = await fetch(`${API_BASE_URL}/ml/agent/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-user-email": userEmail
+          "x-user-email": userEmail,
+          "x-user-name": senderName
         },
         body: JSON.stringify({
           model: "qwen2.5:7b",
           message: originalInput,
           user_email: userEmail,
+          sender_name: senderName,
           thread_id: assistantMsgId,
           conversation_history: messages.map(m => ({
             role: m.role,
@@ -743,16 +755,69 @@ export default function OutreachChat() {
                     )}
 
                     {/* MESSAGE BUBBLE */}
-                    <div className={`px-6 py-4 rounded-2xl text-sm shadow-xl backdrop-blur-md border ${msg.role === "user"
+                    {(!hasStructuredChannelContent(msg) || msg.role === "user") && (
+                      <div className={`px-6 py-4 rounded-2xl text-sm shadow-xl backdrop-blur-md border ${msg.role === "user"
                       ? "bg-purple-600/20 border-purple-500/30 text-white rounded-tr-sm"
                       : "bg-[#111]/80 border-white/10 text-neutral-200 rounded-tl-sm w-full"
                       }`}>
-                      {msg.content ? (
-                        <MarkdownRenderer>{msg.content}</MarkdownRenderer>
-                      ) : (
-                        <span className="animate-pulse text-zinc-500">Thinking...</span>
-                      )}
-                    </div>
+                        {msg.content ? (
+                          <MarkdownRenderer>{msg.content}</MarkdownRenderer>
+                        ) : (
+                          <span className="animate-pulse text-zinc-500">Thinking...</span>
+                        )}
+                      </div>
+                    )}
+
+                    {msg.role === "assistant" && hasStructuredChannelContent(msg) && (
+                      <div className="w-full mt-4 space-y-4">
+                        {msg.generated_content?.email && (
+                          <EmailPreviewCard
+                            content={msg.generated_content.email}
+                            previewMode={true}
+                            onProceed={() => handleSendAction(i, msg.generated_content.email, "email")}
+                            onCancel={() => {}}
+                            audioPath={msg.generated_content?.audio_path}
+                            onConvertAudio={() => handleGenerateAudio(msg.generated_content.email, msg.id)}
+                            isAudioLoading={loadingAction}
+                          />
+                        )}
+
+                        {msg.generated_content?.linkedin && (
+                          <LinkedInPreviewCard
+                            content={msg.generated_content.linkedin}
+                            previewMode={true}
+                            onProceed={() => handleSendAction(i, msg.generated_content.linkedin, "linkedin")}
+                            onCancel={() => {}}
+                            audioPath={msg.generated_content?.audio_path}
+                            onConvertAudio={() => handleGenerateAudio(msg.generated_content.linkedin, msg.id)}
+                            isAudioLoading={loadingAction}
+                          />
+                        )}
+
+                        {(msg.generated_content?.whatsapp || msg.generated_content?.sms) && (
+                          <WhatsAppPreviewCard
+                            content={msg.generated_content.whatsapp || msg.generated_content.sms}
+                            previewMode={true}
+                            onProceed={() =>
+                              handleSendAction(
+                                i,
+                                msg.generated_content.whatsapp || msg.generated_content.sms,
+                                "whatsapp"
+                              )
+                            }
+                            onCancel={() => {}}
+                            audioPath={msg.generated_content?.audio_path}
+                            onConvertAudio={() =>
+                              handleGenerateAudio(
+                                msg.generated_content.whatsapp || msg.generated_content.sms,
+                                msg.id
+                              )
+                            }
+                            isAudioLoading={loadingAction}
+                          />
+                        )}
+                      </div>
+                    )}
 
                     {/* ACTIONS */}
                     {msg.role === 'assistant' && (
@@ -897,7 +962,7 @@ export default function OutreachChat() {
                             )}
 
                           </div>
-                        ) : (
+                        ) : !hasStructuredChannelContent(msg) ? (
                           <div className="flex gap-2">
                             <button
                               onClick={() => handleSendAction(i, msg.generated_content?.email || msg.streaming_generated_content?.email || msg.content, 'email')}
@@ -921,6 +986,10 @@ export default function OutreachChat() {
                             <button onClick={() => handleGenerateAudio(msg.content, msg.id)} className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2">
                               <Volume2 className="w-3 h-3" /> Audio
                             </button>
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-zinc-500 px-1">
+                            Use each channel card above to proceed with send flow.
                           </div>
                         )}
                       </div>

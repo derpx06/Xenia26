@@ -128,7 +128,11 @@ def _sanitize_default_voice_id(voice_id: Optional[str]) -> Optional[str]:
     return voice_id.strip()
 
 
-async def _build_personalized_fallback_response(message: str, user_email: Optional[str]) -> Dict[str, Any]:
+async def _build_personalized_fallback_response(
+    message: str,
+    user_email: Optional[str],
+    sender_name_hint: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Build a deterministic fallback draft when the full agent pipeline times out/fails.
     Keeps responses personalized using structured mention context without LLM calls.
@@ -159,7 +163,7 @@ async def _build_personalized_fallback_response(message: str, user_email: Option
         fit_clause = "this looks relevant based on your current priorities."
     fit_clause_sentence = fit_clause[:1].upper() + fit_clause[1:] if fit_clause else ""
     topic = task.topic_lock or "our collaboration"
-    sender_name = sender.name or "our team"
+    sender_name = (sender_name_hint or "").strip() or sender.name or "your team"
     intent = (task.intent_type or "").lower()
     if "follow" in intent:
         cta = "Would Tuesday or Wednesday work for a quick follow-up?"
@@ -703,6 +707,11 @@ async def agent_chat_sync(request: AgentRequest, http_request: Request):
             or http_request.headers.get("x-user-email")
             or ""
         ).strip().lower() or None
+        sender_name_hint = (
+            request.sender_name
+            or http_request.headers.get("x-user-name")
+            or ""
+        ).strip() or None
 
         try:
             result = await asyncio.wait_for(
@@ -714,7 +723,7 @@ async def agent_chat_sync(request: AgentRequest, http_request: Request):
                 timeout=AGENT_SYNC_TIMEOUT_SECONDS,
             )
         except TimeoutError:
-            fallback = await _build_personalized_fallback_response(request.message, sender_email)
+            fallback = await _build_personalized_fallback_response(request.message, sender_email, sender_name_hint)
             return AgentResponse(
                 response=fallback,
                 tool_calls=[],
@@ -722,7 +731,7 @@ async def agent_chat_sync(request: AgentRequest, http_request: Request):
                 model=request.model
             )
         except Exception:
-            fallback = await _build_personalized_fallback_response(request.message, sender_email)
+            fallback = await _build_personalized_fallback_response(request.message, sender_email, sender_name_hint)
             return AgentResponse(
                 response=fallback,
                 tool_calls=[],
