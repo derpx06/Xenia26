@@ -11,6 +11,38 @@ env_path = Path(__file__).resolve().parent.parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
 
+def _detect_best_torch_device() -> str:
+    """
+    Prefer CUDA when available, then MPS, otherwise CPU.
+    Keep this defensive so settings load even when torch is missing.
+    """
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda"
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+    except Exception:
+        pass
+    return "cpu"
+
+
+def _resolve_rag_device() -> str:
+    """
+    Resolve RAG model device from env.
+    Supported values: auto, cuda, cuda:0, mps, cpu.
+    """
+    raw_value = os.getenv("RAG_MODEL_DEVICE", "auto").strip().lower()
+    if raw_value in {"", "auto"}:
+        return _detect_best_torch_device()
+    if raw_value.startswith("cuda"):
+        return "cuda" if raw_value == "cuda" else raw_value
+    if raw_value in {"mps", "cpu"}:
+        return raw_value
+    return _detect_best_torch_device()
+
+
 class Settings:
     """Application settings"""
     
@@ -22,7 +54,7 @@ class Settings:
         self.model_name = os.getenv("MODEL_NAME", "qwen2.5:7b")
         self.embedding_model = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
         self.TEXT_EMBEDDING_MODEL_ID = os.getenv("TEXT_EMBEDDING_MODEL_ID", "sentence-transformers/all-MiniLM-L6-v2")
-        self.RAG_MODEL_DEVICE = os.getenv("RAG_MODEL_DEVICE", "cpu")
+        self.RAG_MODEL_DEVICE = _resolve_rag_device()
         self.RERANKING_CROSS_ENCODER_MODEL_ID = os.getenv("RERANKING_CROSS_ENCODER_MODEL_ID", "cross-encoder/ms-marco-MiniLM-L-6-v2")
         
         # Database settings

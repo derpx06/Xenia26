@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Send, Mail, Phone, X, Bot, Loader2, ArrowRight, Sparkles, Zap, MessageSquare, ChevronRight, Volume2, StopCircle } from "lucide-react";
+import { Send, Mail, Phone, X, Bot, Loader2, ArrowRight, Sparkles, Zap, MessageSquare, ChevronRight, ChevronLeft, Volume2, StopCircle } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 import { ToolCalls, ToolResult } from "../components/thread/messages/tool-calls";
@@ -15,6 +15,68 @@ import { StreamProvider } from "../providers/Stream";
 import { ThreadProvider } from "../providers/Thread";
 import { ArtifactProvider } from "../components/thread/artifact";
 
+const CarouselContainer = ({ children }) => {
+  const scrollRef = useRef(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+
+  const checkScroll = () => {
+    if (scrollRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
+      setCanScrollLeft(scrollLeft > 0);
+      setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 10);
+    }
+  };
+
+  useEffect(() => {
+    checkScroll();
+    window.addEventListener('resize', checkScroll);
+    return () => window.removeEventListener('resize', checkScroll);
+  }, [children]);
+
+  const scroll = (direction) => {
+    if (scrollRef.current) {
+      const scrollAmount = direction === 'left' ? -300 : 300;
+      scrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+      setTimeout(checkScroll, 300);
+    }
+  };
+
+  return (
+    <div className="relative group w-full mt-4">
+      {/* Left Button */}
+      {canScrollLeft && (
+        <button
+          onClick={() => scroll('left')}
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-20 p-2 bg-black/60 text-white rounded-full backdrop-blur-md hover:bg-black/80 transition-all shadow-xl -ml-2 sm:-ml-4 border border-white/10"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </button>
+      )}
+
+      {/* Container */}
+      <div
+        ref={scrollRef}
+        onScroll={checkScroll}
+        className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory items-start scrollbar-hide w-full"
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+      >
+        {children}
+      </div>
+
+      {/* Right Button */}
+      {canScrollRight && (
+        <button
+          onClick={() => scroll('right')}
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-20 p-2 bg-black/60 text-white rounded-full backdrop-blur-md hover:bg-black/80 transition-all shadow-xl -mr-2 sm:-mr-4 border border-white/10"
+        >
+          <ChevronRight className="w-5 h-5" />
+        </button>
+      )}
+    </div>
+  );
+};
+
 const API_BASE_URL = "http://127.0.0.1:8000";
 const BACKEND_API_URL = "http://localhost:8080/api";
 
@@ -25,13 +87,25 @@ export default function OutreachChat() {
 
   // --- LOGIC STATE ---
   // --- LOGIC STATE ---
-  const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      type: "text",
-      content: "Hello! I am Verve. I can help you draft emails, find contacts, or negotiate deals. How can I help you today?",
-    },
-  ]);
+  const [messages, setMessages] = useState(() => {
+    const saved = localStorage.getItem("outreach-chat-history");
+    try {
+      return saved ? JSON.parse(saved) : [
+        {
+          role: "assistant",
+          type: "text",
+          content: "Hello! I am Verve. I can help you draft emails, find contacts, or negotiate deals. How can I help you today?",
+        },
+      ];
+    } catch (e) {
+      console.error("Failed to parse chat history:", e);
+      return [{
+        role: "assistant",
+        type: "text",
+        content: "Hello! I am Verve. I can help you draft emails, find contacts, or negotiate deals. How can I help you today?",
+      }];
+    }
+  });
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
@@ -56,6 +130,11 @@ export default function OutreachChat() {
   const [selectedDefaultVoice, setSelectedDefaultVoice] = useState("");
   const [selectedCustomVoiceId, setSelectedCustomVoiceId] = useState("");
 
+
+  // Persist messages to local storage
+  useEffect(() => {
+    localStorage.setItem("outreach-chat-history", JSON.stringify(messages));
+  }, [messages]);
 
   // Fetch Contacts
   useEffect(() => {
@@ -187,6 +266,17 @@ export default function OutreachChat() {
     }
 
     setActiveSendFlow({ msgIndex, type, content, step: 'preview', value: prefillValue });
+  };
+
+  const handleProceedToInput = (msgIndex, content, type) => {
+    // If we are already in a flow, just update step
+    if (activeSendFlow && activeSendFlow.msgIndex === msgIndex) {
+      setActiveSendFlow(prev => ({ ...prev, step: 'input' }));
+    } else {
+      // If starting fresh (rare for proceed, but safe)
+      handleSendAction(msgIndex, content, type);
+      setTimeout(() => setActiveSendFlow(prev => ({ ...prev, step: 'input' })), 0);
+    }
   };
 
   const executeSend = async (target, subjectOrText, bodyText) => {
@@ -554,7 +644,7 @@ export default function OutreachChat() {
       <Sidebar />
 
       {/* Main Content Area */}
-      <div className="flex-1 relative aurora-bg flex flex-col h-full">
+      <div className="flex-1 w-full relative aurora-bg flex flex-col h-full overflow-x-hidden">
 
         {/* --- STATE 1: INTRO SCREEN --- */}
         {!hasStarted ? (
@@ -601,8 +691,8 @@ export default function OutreachChat() {
           <div className="flex-1 flex flex-col h-full animate-in slide-in-from-bottom-10 fade-in duration-700">
 
             {/* Header */}
-            <div className="absolute top-0 left-0 right-0 z-30 p-6">
-              <div className="glass-panel rounded-2xl px-6 py-4 flex justify-between items-center shadow-lg">
+            <div className="absolute top-0 left-0 right-0 z-30 p-4 sm:p-6">
+              <div className="glass-panel rounded-2xl px-4 pl-14 sm:pl-6 py-4 flex justify-between items-center shadow-lg">
                 <div className="flex items-center gap-4">
                   {/* Small version of the 3D head */}
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500/20 to-yellow-500/20 flex items-center justify-center border border-white/10 overflow-hidden">
@@ -756,10 +846,10 @@ export default function OutreachChat() {
 
                     {/* MESSAGE BUBBLE */}
                     {(!hasStructuredChannelContent(msg) || msg.role === "user") && (
-                      <div className={`px-6 py-4 rounded-2xl text-sm shadow-xl backdrop-blur-md border ${msg.role === "user"
-                      ? "bg-purple-600/20 border-purple-500/30 text-white rounded-tr-sm"
-                      : "bg-[#111]/80 border-white/10 text-neutral-200 rounded-tl-sm w-full"
-                      }`}>
+                      <div className={`px-4 sm:px-6 py-4 rounded-2xl text-sm shadow-xl backdrop-blur-md border ${msg.role === "user"
+                        ? "bg-purple-600/20 border-purple-500/30 text-white rounded-tr-sm"
+                        : "bg-[#111]/80 border-white/10 text-neutral-200 rounded-tl-sm w-full"
+                        }`}>
                         {msg.content ? (
                           <MarkdownRenderer>{msg.content}</MarkdownRenderer>
                         ) : (
@@ -769,54 +859,36 @@ export default function OutreachChat() {
                     )}
 
                     {msg.role === "assistant" && hasStructuredChannelContent(msg) && (
-                      <div className="w-full mt-4 space-y-4">
+                      <CarouselContainer>
                         {msg.generated_content?.email && (
                           <EmailPreviewCard
                             content={msg.generated_content.email}
                             previewMode={true}
-                            onProceed={() => handleSendAction(i, msg.generated_content.email, "email")}
-                            onCancel={() => {}}
+                            onProceed={() => handleProceedToInput(i, msg.generated_content.email, "email")}
+                            onCancel={() => { }}
                             audioPath={msg.generated_content?.audio_path}
                             onConvertAudio={() => handleGenerateAudio(msg.generated_content.email, msg.id)}
                             isAudioLoading={loadingAction}
                           />
                         )}
-
-                        {msg.generated_content?.linkedin && (
-                          <LinkedInPreviewCard
-                            content={msg.generated_content.linkedin}
-                            previewMode={true}
-                            onProceed={() => handleSendAction(i, msg.generated_content.linkedin, "linkedin")}
-                            onCancel={() => {}}
-                            audioPath={msg.generated_content?.audio_path}
-                            onConvertAudio={() => handleGenerateAudio(msg.generated_content.linkedin, msg.id)}
-                            isAudioLoading={loadingAction}
-                          />
-                        )}
-
-                        {(msg.generated_content?.whatsapp || msg.generated_content?.sms) && (
+                        {msg.generated_content?.whatsapp && (
                           <WhatsAppPreviewCard
-                            content={msg.generated_content.whatsapp || msg.generated_content.sms}
+                            content={msg.generated_content.whatsapp}
                             previewMode={true}
-                            onProceed={() =>
-                              handleSendAction(
-                                i,
-                                msg.generated_content.whatsapp || msg.generated_content.sms,
-                                "whatsapp"
-                              )
-                            }
-                            onCancel={() => {}}
-                            audioPath={msg.generated_content?.audio_path}
-                            onConvertAudio={() =>
-                              handleGenerateAudio(
-                                msg.generated_content.whatsapp || msg.generated_content.sms,
-                                msg.id
-                              )
-                            }
-                            isAudioLoading={loadingAction}
+                            onProceed={() => handleProceedToInput(i, msg.generated_content.whatsapp, "whatsapp")}
+                            onCancel={() => { }}
                           />
                         )}
-                      </div>
+                        {(msg.generated_content?.linkedin || msg.generated_content?.linkedin_dm) && (
+                          <LinkedInPreviewCard
+                            content={msg.generated_content?.linkedin || msg.generated_content?.linkedin_dm}
+                            previewMode={true}
+                            onProceed={() => handleProceedToInput(i, msg.generated_content?.linkedin || msg.generated_content?.linkedin_dm, "linkedin")}
+                            onCancel={() => { }}
+                          />
+                        )}
+
+                      </CarouselContainer>
                     )}
 
                     {/* ACTIONS */}
@@ -963,7 +1035,7 @@ export default function OutreachChat() {
 
                           </div>
                         ) : !hasStructuredChannelContent(msg) ? (
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-2">
                             <button
                               onClick={() => handleSendAction(i, msg.generated_content?.email || msg.streaming_generated_content?.email || msg.content, 'email')}
                               className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-purple-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2"
@@ -1002,7 +1074,7 @@ export default function OutreachChat() {
 
 
             {/* Input Area */}
-            <div className="p-6 relative z-40 shrink-0 w-full max-w-4xl mx-auto">
+            <div className="p-4 sm:p-6 relative z-40 shrink-0 w-full max-w-4xl mx-auto">
               {/* Mentions Dropdown */}
               {showMentions && (
                 <div className="absolute bottom-24 left-6 z-50 w-64 bg-[#111] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-2">
@@ -1096,6 +1168,17 @@ export default function OutreachChat() {
         )}
 
       </div>
+
+      {/* --- CONTACT INPUT MODAL (STEP: INPUT) --- */}
+      {activeSendFlow?.step === 'input' && (
+        <ContactInputStep
+          activeSendFlow={activeSendFlow}
+          setActiveSendFlow={setActiveSendFlow}
+          executeSend={(target) => executeSend(target, activeSendFlow.type === 'whatsapp' ? activeSendFlow.content : "Subject Here", activeSendFlow.content)}
+          loadingAction={loadingAction}
+          onCancel={() => setActiveSendFlow(null)}
+        />
+      )}
     </div>
   );
 }

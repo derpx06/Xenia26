@@ -14,6 +14,53 @@ from ml.settings import settings
 from .base import SingletonMeta
 
 
+def _detect_best_device() -> str:
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda"
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+    except Exception:
+        pass
+    return "cpu"
+
+
+def _resolve_device(requested_device: str) -> str:
+    device = (requested_device or "").strip().lower()
+    if not device or device == "auto":
+        return _detect_best_device()
+
+    if device.startswith("cuda"):
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                return device
+        except Exception:
+            pass
+        logger.warning(
+            "CUDA requested for embeddings but not available. Falling back to CPU."
+        )
+        return "cpu"
+
+    if device == "mps":
+        try:
+            import torch
+
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                return "mps"
+        except Exception:
+            pass
+        logger.warning(
+            "MPS requested for embeddings but not available. Falling back to CPU."
+        )
+        return "cpu"
+
+    return "cpu"
+
+
 class EmbeddingModelSingleton(metaclass=SingletonMeta):
     """
     A singleton class that provides a pre-trained transformer model for generating embeddings of input text.
@@ -26,13 +73,27 @@ class EmbeddingModelSingleton(metaclass=SingletonMeta):
         cache_dir: Optional[Path] = None,
     ) -> None:
         self._model_id = model_id
-        self._device = device
+        self._device = _resolve_device(device)
 
-        self._model = SentenceTransformer(
-            self._model_id,
-            device=self._device,
-            cache_folder=str(cache_dir) if cache_dir else None,
-        )
+        try:
+            self._model = SentenceTransformer(
+                self._model_id,
+                device=self._device,
+                cache_folder=str(cache_dir) if cache_dir else None,
+            )
+        except Exception as e:
+            if self._device != "cpu":
+                logger.warning(
+                    f"Failed to initialize embedding model on {self._device}: {e}. Falling back to CPU."
+                )
+                self._device = "cpu"
+                self._model = SentenceTransformer(
+                    self._model_id,
+                    device=self._device,
+                    cache_folder=str(cache_dir) if cache_dir else None,
+                )
+            else:
+                raise
         self._model.eval()
 
     @property
@@ -119,12 +180,25 @@ class CrossEncoderModelSingleton(metaclass=SingletonMeta):
         """
 
         self._model_id = model_id
-        self._device = device
+        self._device = _resolve_device(device)
 
-        self._model = CrossEncoder(
-            model_name=self._model_id,
-            device=self._device,
-        )
+        try:
+            self._model = CrossEncoder(
+                model_name=self._model_id,
+                device=self._device,
+            )
+        except Exception as e:
+            if self._device != "cpu":
+                logger.warning(
+                    f"Failed to initialize cross-encoder on {self._device}: {e}. Falling back to CPU."
+                )
+                self._device = "cpu"
+                self._model = CrossEncoder(
+                    model_name=self._model_id,
+                    device=self._device,
+                )
+            else:
+                raise
         self._model.model.eval()
 
     def __call__(self, pairs: list[tuple[str, str]], to_list: bool = True) -> NDArray[np.float32] | list[float]:

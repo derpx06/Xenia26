@@ -12,7 +12,7 @@ export function ToolCalls({
     if (!toolCalls || toolCalls.length === 0) return null;
 
     return (
-        <div className="mx-auto grid max-w-3xl grid-rows-[1fr_auto] gap-2 w-full">
+        <div className="mx-auto grid max-w-3xl grid-rows-[1fr_auto] gap-2 w-full overflow-hidden">
             {toolCalls.map((tc, idx) => {
                 const args = tc.args || {};
                 const hasArgs = Object.keys(args).length > 0;
@@ -35,7 +35,7 @@ export function ToolCalls({
                             </h3>
                         </div>
                         {hasArgs ? (
-                            <div className="overflow-x-auto">
+                            <div className="overflow-x-auto max-w-full">
                                 <table className="min-w-full divide-y divide-zinc-800">
                                     <tbody className="divide-y divide-zinc-800">
                                         {Object.entries(args).map(([key, value], argIdx) => (
@@ -96,7 +96,7 @@ export function ToolResult({ message }) {
             : contentStr;
 
     return (
-        <div className="mx-auto grid max-w-3xl grid-rows-[1fr_auto] gap-2 w-full mt-2">
+        <div className="mx-auto grid max-w-3xl grid-rows-[1fr_auto] gap-2 w-full mt-2 overflow-hidden">
             <div className="overflow-hidden rounded-lg border border-emerald-900/30 bg-emerald-950/10 shadow-sm">
                 <div className="border-b border-emerald-900/30 bg-emerald-950/20 px-4 py-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -135,7 +135,7 @@ export function ToolResult({ message }) {
                                 transition={{ duration: 0.2 }}
                             >
                                 {isJsonContent ? (
-                                    <div className="overflow-x-auto">
+                                    <div className="overflow-x-auto max-w-full">
                                         <table className="min-w-full divide-y divide-emerald-900/20">
                                             <tbody className="divide-y divide-emerald-900/20">
                                                 {(Array.isArray(parsedContent)

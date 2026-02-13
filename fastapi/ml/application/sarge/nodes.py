@@ -10,12 +10,19 @@ import instructor
 import openai
 import asyncio
 import re
+import os
 from typing import Optional, List
 from ..agent.tools import duckduckgo_search, scrape_article, wikipedia_search
 from agent_style_transfer.writing_style_inferrer import infer_style_rules, infer_few_shot_examples
 from agent_style_transfer.schemas import Document
-from .tts_engine import XTTSEngine
 import uuid
+
+try:
+    from .tts_engine import XTTSEngine
+    _TTS_IMPORT_ERROR = None
+except Exception as e:
+    XTTSEngine = None
+    _TTS_IMPORT_ERROR = e
 
 
 # Global KB singleton to prevent socket/file leaks
@@ -29,16 +36,19 @@ def get_kb():
 
 # Global TTS singleton to avoid reloading models (DANGEROUS: RAM HEAVY)
 _tts = None
+
 def get_tts():
     global _tts
+    if XTTSEngine is None:
+        raise RuntimeError(f"TTS unavailable: {_TTS_IMPORT_ERROR}")
+
     if _tts is None:
         # Check if assets/speaker.wav exists for cloning, otherwise use default
         speaker_wav = "assets/speaker.wav"
-        import os
         if not os.path.exists(speaker_wav) or os.path.getsize(speaker_wav) == 0:
             speaker_wav = None
-            logger.warning("🎙️ TTS: No speaker.wav found in assets/, using default voice.")
-            
+            logger.warning("TTS: No speaker.wav found in assets/, using default voice.")
+
         _tts = XTTSEngine(speaker_wav=speaker_wav)
     return _tts
 
@@ -725,6 +735,9 @@ async def voice_node(state: AgentState) -> AgentState:
     clean_text = clean_text.strip()[:1000] # Limit length for speed
     
     try:
+        if XTTSEngine is None:
+            logger.warning(f"TTS dependencies missing ({_TTS_IMPORT_ERROR}); skipping audio generation.")
+            return {}
         tts_engine = await asyncio.to_thread(get_tts)
         
         # Create static audio dir if it doesn't exist (fail-safe)
@@ -754,3 +767,4 @@ async def voice_node(state: AgentState) -> AgentState:
     except Exception as e:
         logger.error(f"🎙️ VOICE: Audio generation failed - {e}")
         return {}
+

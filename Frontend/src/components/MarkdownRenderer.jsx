@@ -26,7 +26,8 @@ export default function MarkdownRenderer({ children, className = "" }) {
                                 customStyle={{
                                     margin: '0.5rem 0',
                                     padding: '1rem',
-                                    background: '#1e1e1e'
+                                    background: '#1e1e1e',
+                                    overflowX: 'auto'
                                 }}
                                 {...props}
                             >

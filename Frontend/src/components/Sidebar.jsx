@@ -112,7 +112,7 @@ export default function Sidebar() {
           translateX: isOpen || window.innerWidth >= 768 ? 0 : -300
         }}
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
-        className={`fixed md:relative inset-y-0 left-0 z-50 flex flex-col bg-[#050505]/80 backdrop-blur-xl border-r border-white/5 shadow-2xl overflow-hidden`}
+        className={`fixed md:relative inset-y-0 left-0 z-50 flex flex-col bg-[#050505]/80 backdrop-blur-xl border-r border-white/5 shadow-2xl overflow-hidden ${!isOpen && window.innerWidth < 768 ? "hidden" : "flex"}`}
       >
         {/* Header / Logo */}
         <div className="p-6 flex items-center gap-3">

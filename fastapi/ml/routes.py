@@ -54,7 +54,7 @@ def _ensure_agent_loaded() -> bool:
 def _ensure_sarge_loaded() -> bool:
     global SARGE_AVAILABLE, SARGE_IMPORT_ERROR, run_sarge, stream_sarge, get_tts
 
-    if SARGE_AVAILABLE and run_sarge and stream_sarge and get_tts:
+    if SARGE_AVAILABLE and run_sarge and stream_sarge:
         return True
 
     if os.getenv("DISABLE_SARGE", "false").lower() == "true":
@@ -75,6 +75,18 @@ def _ensure_sarge_loaded() -> bool:
         SARGE_AVAILABLE = False
         SARGE_IMPORT_ERROR = str(e)
         return False
+
+
+async def _load_tts_or_503():
+    """
+    Lazily load TTS engine. SARGE remains available even if TTS deps are missing.
+    """
+    if not get_tts:
+        raise HTTPException(status_code=503, detail="TTS unavailable: engine not initialized")
+    try:
+        return await asyncio.to_thread(get_tts)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"TTS unavailable: {str(e)}")
 
 
 def _safe_email_key(email: str) -> str:
@@ -880,9 +892,16 @@ async def get_sarge_voices(email: Optional[str] = None):
     if not _ensure_sarge_loaded():
         raise HTTPException(status_code=503, detail=f"SARGE unavailable: {SARGE_IMPORT_ERROR}")
     try:
-        tts_engine = await asyncio.to_thread(get_tts)
-        default_voices = await asyncio.to_thread(tts_engine.get_default_speakers)
-        default_items = [{"id": v, "name": v, "source": "default"} for v in default_voices]
+        tts_available = True
+        tts_error = None
+        default_items = []
+        try:
+            tts_engine = await _load_tts_or_503()
+            default_voices = await asyncio.to_thread(tts_engine.get_default_speakers)
+            default_items = [{"id": v, "name": v, "source": "default"} for v in default_voices]
+        except HTTPException as e:
+            tts_available = False
+            tts_error = e.detail
 
         custom_records = _load_voice_registry()
         if email:
@@ -900,7 +919,12 @@ async def get_sarge_voices(email: Optional[str] = None):
             }
             for r in custom_records
         ]
-        return {"default_voices": default_items, "custom_voices": custom_items}
+        return {
+            "default_voices": default_items,
+            "custom_voices": custom_items,
+            "tts_available": tts_available,
+            "tts_error": tts_error,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch voices: {str(e)}")
 
@@ -961,7 +985,7 @@ async def sarge_voice(request: SargeVoiceRequest):
         raise HTTPException(status_code=400, detail="Text is required")
 
     try:
-        tts_engine = await asyncio.to_thread(get_tts)
+        tts_engine = await _load_tts_or_503()
         used_cloned_voice = False
         voice_mode = (request.voice_mode or "auto").lower()
         selected_default_voice = _sanitize_default_voice_id(request.default_voice_id)
@@ -1045,6 +1069,7 @@ async def upload_sarge_voice_profile(request: VoiceProfileUploadRequest):
         )
 
     try:
+        tts_engine = await _load_tts_or_503()
         VOICE_PROFILES_DIR.mkdir(parents=True, exist_ok=True)
         profile_id = uuid.uuid4().hex[:10]
         profile_path = VOICE_PROFILES_DIR / f"{profile_id}{ext}"
@@ -1052,7 +1077,6 @@ async def upload_sarge_voice_profile(request: VoiceProfileUploadRequest):
         with open(profile_path, "wb") as f:
             f.write(content)
 
-        tts_engine = await asyncio.to_thread(get_tts)
         await asyncio.to_thread(tts_engine.ensure_speaker, str(profile_path))
 
         records = _load_voice_registry()

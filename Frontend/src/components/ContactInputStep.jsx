@@ -139,7 +139,7 @@ export default function ContactInputStep({ activeSendFlow, setActiveSendFlow, ex
     }
 
     return (
-        <div className="relative max-w-md mb-2">
+        <div className="relative w-full sm:max-w-md max-w-[90vw] mb-2 mx-auto">
             <div className="glass-panel p-2 rounded-xl flex items-center gap-2 animate-in zoom-in-95 relative z-20">
                 <input
                     autoFocus
