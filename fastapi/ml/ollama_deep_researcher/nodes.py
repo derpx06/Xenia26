@@ -211,9 +211,28 @@ def _extract_topic_focus(topic_text: str) -> str:
     if not text:
         return ""
 
+    # Strip common instruction prefixes
+    pattern = r"^(?:write|draft|create|generate)\s+(?:a|an)\s+(?:thought leadership\s+)?(?:article|blog post|essay|paper|report|guide)\s+(?:about|on|regarding)\s+"
+    match = re.search(pattern, text, flags=re.IGNORECASE | re.MULTILINE)
+    if match:
+        candidate = text[match.end():].strip()
+        # If the candidate still has newlines, take the first line as the topic
+        if "\n" in candidate:
+            candidate = candidate.split("\n")[0].strip()
+        if candidate:
+             # Recursively clean in case of multiple prefixes
+            return _extract_topic_focus(candidate) or candidate
+
     canonical = _canonical_topic_from_text(text)
     if canonical:
         return canonical
+
+    # Handle "TASK" prefix or "Topic Context"
+    task_match = re.search(r"(?:^|\n)(?:TASK|Topic Context)[:\s]+(.*?)(?:\n|$)", text, flags=re.IGNORECASE | re.DOTALL)
+    if task_match:
+        candidate = task_match.group(1).strip()
+        if candidate and len(candidate) > 10:
+             return _extract_topic_focus(candidate) or candidate
 
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if not lines:
@@ -617,9 +636,11 @@ def _tokenize_keywords(text: str, limit: int = 16) -> List[str]:
     stop = {
         "with", "from", "that", "this", "about", "their", "there", "which", "into",
         "while", "where", "when", "under", "over", "only", "also", "using", "build",
-        "article", "section", "write", "guidelines", "evidence", "topic",
+        "article", "section", "write", "draft", "create", "generate", "guidelines",
+        "evidence", "topic", "brief", "context", "outline", "research",
     }
-    words = re.findall(r"[a-zA-Z]{4,}", (text or "").lower())
+    # Allow 2+ chars to capture AI, UX, UI, ML, HR, etc.
+    words = re.findall(r"[a-zA-Z0-9]{2,}", (text or "").lower())
     uniq: List[str] = []
     seen = set()
     for word in words:
@@ -633,6 +654,11 @@ def _tokenize_keywords(text: str, limit: int = 16) -> List[str]:
 
 
 def _compact_search_query(text: str, max_terms: int = 10) -> str:
+    cleaned = _markdown_to_text(text).strip()
+    # If the query is already short and specific, use it as is (stripping instruction keywords)
+    if len(cleaned.split()) <= 10:
+        return cleaned
+    
     keywords = _tokenize_keywords(text, limit=max_terms)
     if not keywords:
         return _truncate(text, 120)
@@ -805,20 +831,20 @@ def _fallback_section_text(
         )
     else:
         middle = (
-            f"{guidelines} Translate the concept into plain language first, then connect it to a practical decision the reader can make."
+            f"{guidelines}"
         )
 
     opener = (
-        f"## {section_title}\n\n"
         f"Let us make {topic_alias} understandable for {reader}. "
         f"This section keeps the tone {writing_tone} and focuses on what actually matters in practice."
     )
     evidence_block = ""
-    if usable_research:
-        evidence_block = (
-            "Use this supporting context as factual guardrails while keeping the prose clean and readable:\n\n"
-            f"> {_truncate(_markdown_to_text(usable_research), 420)}"
-        )
+    evidence_block = ""
+    # usable_research is risky if it contains prompt leaks, so we skip it for fallback.
+    # if usable_research:
+    #     evidence_block = (
+    #         f"> {_truncate(_markdown_to_text(usable_research), 420)}"
+    #     )
 
     close = "The key takeaway: if you can explain this mechanism clearly, you can evaluate tools and claims with far more confidence."
     practical = (
@@ -964,6 +990,7 @@ def _get_llm(
         "base_url": conf.ollama_base_url,
         "model": conf.local_llm,
         "temperature": temperature,
+        "num_ctx": 4096,
     }
     if json_mode:
         kwargs["format"] = "json"
@@ -1108,81 +1135,146 @@ async def research_worker(state: WorkerState, config: RunnableConfig) -> Dict[st
     root_topic = _extract_topic_focus(str(state.get("topic", "")).strip()) or str(state.get("topic", "")).strip()
     if not sub_topic:
         return {"gathered_notes": [], "image_candidates": [], "logs": ["[WORKER] Skipped empty sub-topic."]}
-    query_text = f"{_compact_search_query(sub_topic, max_terms=8)} {_compact_search_query(root_topic, max_terms=5)}".strip()
+async def research_worker(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
+    conf = Configuration.from_runnable_config(config)
+    outline = state.get("outline", []) or []
+    index = state.get("current_section_index", 0)
+    
+    if index >= len(outline):
+        return {"current_section_context": ""}
+        
+    section = outline[index]
+    sub_topic = section.get("title", f"Section {index + 1}")
+    root_topic = state.get("topic", "")
+    
+    # 1. Search Web & Wiki
+    search_tasks = []
+    if TavilyClient:
+        search_tasks.append(
+            asyncio.to_thread(_tavily_search, conf, f"{sub_topic} {root_topic}", int(conf.web_results_per_topic), bool(conf.include_images_in_research))
+        )
+    if DDGS:
+        search_tasks.append(
+            asyncio.to_thread(_duckduckgo_search, conf, f"{sub_topic} {root_topic}", int(conf.web_results_per_topic))
+        )
+    if wikipedia:
+        search_tasks.append(
+            asyncio.to_thread(_wikipedia_search, conf, sub_topic, int(conf.wiki_results_per_topic))
+        )
 
-    tasks: Dict[str, asyncio.Task[Any]] = {
-        "tavily": asyncio.create_task(
-            asyncio.to_thread(
-                _tavily_search,
-                conf,
-                query_text,
-                int(conf.web_results_per_topic),
-                bool(conf.include_images_in_research),
-            )
-        ),
-        "wiki": asyncio.create_task(
-            asyncio.to_thread(_wikipedia_search, conf, query_text, int(conf.wiki_results_per_topic))
-        ),
-    }
-    if DDGS is not None:
-        tasks["ddg"] = asyncio.create_task(
-            asyncio.to_thread(_duckduckgo_search, conf, query_text, int(conf.web_results_per_topic))
+    # Use a dictionary to map tasks to their expected result type for easier processing
+    task_map = {}
+    if TavilyClient:
+        task_map["tavily"] = asyncio.create_task(
+            asyncio.to_thread(_tavily_search, conf, f"{sub_topic} {root_topic}", int(conf.web_results_per_topic), bool(conf.include_images_in_research))
+        )
+    if DDGS:
+        task_map["ddg"] = asyncio.create_task(
+            asyncio.to_thread(_duckduckgo_search, conf, f"{sub_topic} {root_topic}", int(conf.web_results_per_topic))
+        )
+    if wikipedia:
+        task_map["wiki"] = asyncio.create_task(
+            asyncio.to_thread(_wikipedia_search, conf, sub_topic, int(conf.wiki_results_per_topic))
         )
 
     done, pending = await asyncio.wait(
-        list(tasks.values()),
+        list(task_map.values()),
         timeout=float(conf.research_task_timeout_seconds),
     )
     for pending_task in pending:
         pending_task.cancel()
 
-    tavily_data: Dict[str, Any] = {"results": []}
-    wiki_rows: List[Dict[str, str]] = []
+    tavily_data: Dict[str, Any] = {"results": [], "images": []}
     ddg_data: Dict[str, Any] = {"results": []}
+    wiki_rows: List[Dict[str, str]] = []
 
-    for name, task in tasks.items():
+    for name, task in task_map.items():
         if task not in done:
             continue
         try:
             result = task.result()
         except Exception:
             result = None
+        
         if name == "tavily" and isinstance(result, dict):
             tavily_data = result
-        elif name == "wiki" and isinstance(result, list):
-            wiki_rows = result
         elif name == "ddg" and isinstance(result, dict):
             ddg_data = result
+        elif name == "wiki" and isinstance(result, list):
+            wiki_rows = result
 
+    # MERGE & FILTER
     web_rows = _merge_search_rows(tavily_data, ddg_data, max_items=int(conf.web_results_per_topic))
     web_rows = _filter_search_results_by_topic(web_rows, f"{sub_topic} {root_topic}", max_items=int(conf.web_results_per_topic))
 
     web_bullets = _format_web_results(web_rows, max_items=int(conf.web_results_per_topic))
     wiki_bullets = _format_wikipedia_results(wiki_rows, max_items=int(conf.wiki_results_per_topic))
     images = _extract_images_from_tavily(tavily_data, max_items=int(conf.image_results_per_topic))
+    
+    # --- Deep Scraping Step ---
+    deep_scrape_urls = []
+    seen_deep = set()
+    
+    # Prioritize Tavily results
+    for row in tavily_data.get("results", [])[:2]:
+        u = str(row.get("url", "")).strip()
+        if u and u not in seen_deep:
+            deep_scrape_urls.append(u)
+            seen_deep.add(u)
+        if len(deep_scrape_urls) >= 2:
+            break
+            
+    # If we need more, check DDG
+    if len(deep_scrape_urls) < 2:
+        for row in ddg_data.get("results", [])[:2]:
+            u = str(row.get("url", "")).strip()
+            if u and u not in seen_deep:
+                deep_scrape_urls.append(u)
+                seen_deep.add(u)
+            if len(deep_scrape_urls) >= 2:
+                break
 
-    lines: List[str] = [f"### {sub_topic}", "- Key Web Evidence:"]
+    deep_knowledge = []
+    if deep_scrape_urls:
+        try:
+            from ml.application.crawlers.custom_article import CustomArticleCrawler
+            crawler = CustomArticleCrawler()
+            scrape_tasks = [crawler.aextract(url) for url in deep_scrape_urls]
+            scrape_results = await asyncio.gather(*scrape_tasks, return_exceptions=True)
+            
+            for url, res in zip(deep_scrape_urls, scrape_results):
+                if isinstance(res, dict) and res.get("content"):
+                    title = res.get("title", "Article")
+                    raw_md = _markdown_to_text(res["content"])
+                    slice_content = _truncate(raw_md, 4000) # Keep it 4000 chars per article strict
+                    deep_knowledge.append(f"### [DEEP DIVE] {title}\nSource: {url}\n\n{slice_content}")
+        except Exception as e:
+            deep_knowledge.append(f"-> Deep scraping error: {str(e)}")
+
+    # CONSTRUCT CONTEXT
+    lines: List[str] = [f"### Research for: {sub_topic}", "- Key Web Evidence:"]
     if web_bullets:
         lines.extend([f"  - {line}" for line in web_bullets])
     else:
         lines.append("  - No reliable web results returned.")
 
-    lines.append("- Wikipedia Context:")
     if wiki_bullets:
+        lines.append("- Wikipedia Context:")
         lines.extend([f"  - {line}" for line in wiki_bullets])
-    else:
-        lines.append("  - No relevant Wikipedia summary found.")
 
-    if images:
-        lines.append("- Image Candidates:")
-        lines.extend([f"  - {url}" for url in images])
+    if deep_knowledge:
+        lines.append("\n- Deep Research Context (Full Text):")
+        lines.extend(deep_knowledge)
 
+    context_str = "\n".join(lines)[:int(conf.max_research_bible_chars)] # Global safety cap
+    
     log_line = (
-        f"[WORKER] Completed '{sub_topic}' "
-        f"(web={len(web_bullets)}, wiki={len(wiki_bullets)}, images={len(images)}, ddg={len(ddg_data.get('results', []))})."
+        f"[RESEARCH] Completed '{sub_topic}' "
+        f"(web={len(web_bullets)}, wiki={len(wiki_bullets)}, deep={len(deep_knowledge)}, images={len(images)})."
     )
+    
     return {
-        "gathered_notes": ["\n".join(lines)],
+        "current_section_context": context_str,
         "image_candidates": images,
         "logs": [log_line],
     }
@@ -1223,7 +1315,7 @@ async def synthesizer(state: AgentState, config: RunnableConfig) -> Dict[str, An
     research_bible = (
         "# Research Bible\n\n"
         "## Topic Context\n"
-        f"{state.get('topic', '')}\n\n"
+        f"{writing_brief.get('topic_focus', state.get('topic', ''))}\n\n"
         "## Writing Brief\n"
         f"{chr(10).join(brief_lines)}\n\n"
         "## Evidence Digest\n"
@@ -1236,58 +1328,70 @@ async def synthesizer(state: AgentState, config: RunnableConfig) -> Dict[str, An
     return {
         "research_bible": research_bible,
         "image_candidates": deduped_images[: int(conf.max_images_per_article) * 3],
-        "logs": [f"[SYNTHESIZER] Compiled research bible (notes={len(compact_notes)}, images={len(deduped_images)})."],
+        "logs": [f"[SYNTHESIZER] Compiled research bible (notes={len(compact_notes)}, images={len(deduped_images)}, size={len(research_bible)} chars)."],
     }
 
 
 async def planner(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
     conf = Configuration.from_runnable_config(config)
     topic = str(state.get("topic", "")).strip()
-    research_bible = _slice_research_bible(
-        str(state.get("research_bible", "")).strip(),
-        min(int(conf.max_research_bible_chars), 7000),
-    )
-    sub_topics = state.get("sub_topics", []) or []
     writing_brief = state.get("writing_brief", {}) or {}
     topic_focus = str(writing_brief.get("topic_focus", "")).strip() or _extract_topic_focus(topic) or topic
     desired_words = int(writing_brief.get("target_words", 900) or 900)
+    
+    # Planner runs immediately after orchestrator, so no research bible yet.
+    # We plan based on the user intent and desired length.
+    
     planner_timeout = min(
         float(conf.planner_timeout_seconds),
         max(15.0, float(conf.llm_timeout_seconds) * 0.55),
     )
 
-    llm = _get_llm(config, json_mode=True, temperature=0.05)
+    llm = _get_llm(config, json_mode=True, temperature=0.1)
     payload = {"title": topic, "outline": []}
+    
+    # Construct a minimal context from the writing brief
+    context = (
+        f"Topic: {topic}\n"
+        f"Intent: {writing_brief.get('article_intent', 'N/A')}\n"
+        f"Angle: {writing_brief.get('angle', 'N/A')}\n"
+        f"Target Audience: {writing_brief.get('target_reader', 'N/A')}\n"
+        f"Style: {writing_brief.get('style_direction', 'N/A')}"
+    )
+
     try:
         response = await asyncio.wait_for(
             llm.ainvoke(
                 [
                     SystemMessage(content=PLANNER_PROMPT),
-                    HumanMessage(
-                        content=(
-                            f"Topic:\n{topic_focus}\n\n"
-                            f"Writing Brief:\n{json.dumps(writing_brief, ensure_ascii=True)}\n\n"
-                            f"Research Bible:\n{research_bible}\n\n"
-                            "Return strict JSON object with keys: title, outline."
-                        )
-                    ),
+                    HumanMessage(content=f"Create an outline for:\n{context}\n\nTarget words: {desired_words}"),
                 ]
             ),
             timeout=planner_timeout,
         )
-        payload = _safe_json_loads(response.content, {"title": topic, "outline": []})
-    except Exception:
+        payload = _safe_json_loads(response.content, payload)
+    except Exception as e:
+        print(f"[PLANNER] Error: {e}")
         payload = {"title": topic, "outline": []}
-    outline = _normalize_outline(
+
+    # Ensure robust outline
+    # For fail-safe, we generate a default outline if LLM fails
+    fallback_topics = _coerce_sub_topics(topic, state)
+    clean_outline = _normalize_outline(
         payload.get("outline", []),
-        sub_topics,
+        fallback_topics,
         desired_total_words=desired_words,
         article_topic=topic_focus,
     )
+
+    log_msg = f"[PLANNER] Built outline with {len(clean_outline)} sections (target_words={desired_words}, timeout={planner_timeout}s)."
+
     return {
-        "outline": outline,
+        "outline": clean_outline,
+        "logs": [log_msg],
+        # Initialize loop state
         "current_section_index": 0,
-        "logs": [f"[PLANNER] Built outline with {len(outline)} sections (target_words={desired_words}, timeout={round(planner_timeout, 1)}s)."],
+        "draft_sections": {},  # Clear any previous drafts
     }
 
 
@@ -1295,6 +1399,7 @@ async def writer(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
     conf = Configuration.from_runnable_config(config)
     outline = state.get("outline", []) or []
     index = int(state.get("current_section_index", 0))
+    
     if index >= len(outline):
         return {"logs": ["[WRITER] Draft loop complete."]}
 
@@ -1303,66 +1408,54 @@ async def writer(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
     guidelines = str(section.get("guidelines", "Be specific and technical.")).strip()
     evidence_hint = str(section.get("evidence_hint", "Use concrete findings from research sources.")).strip()
     target_words = int(section.get("word_count", 0) or 0)
+    
+    # Get the specific context for this section from the state
+    research_context = state.get("current_section_context", "") or "No specific research found."
+    
     drafts = dict(state.get("draft_sections", {}))
     previous = drafts.get(index - 1, "")
     previous_tail = _tail_sentences(previous)
+    
     writing_brief = state.get("writing_brief", {}) or {}
     topic_focus = str(writing_brief.get("topic_focus") or _extract_topic_focus(str(state.get("topic", ""))) or state.get("topic", "")).strip()
     primary_keyword = str(writing_brief.get("keyword", "")).strip()
+    
     if target_words <= 0:
         fallback_words = int(writing_brief.get("target_words", 900) or 900)
         section_count = max(1, len(outline))
-        target_words = max(140, min(320, round(fallback_words / section_count)))
+        target_words = max(150, min(350, int(fallback_words / section_count)))
 
     image_candidates = [str(url).strip() for url in (state.get("image_candidates", []) or []) if str(url).strip()]
 
-    llm = _get_llm(config, json_mode=False, temperature=0.24)
+    llm = _get_llm(config, temperature=0.3)
+    
+    prompt = (
+        f"{WRITER_PROMPT}\n\n"
+        f"TASK: Write '{section_title}' for an article on '{topic_focus}'.\n"
+        f"Length: ~{target_words} words.\n"
+        f"Guidelines: {guidelines}\n"
+        f"Evidence Requirements: {evidence_hint}\n\n"
+        f"--- CONTEXT FOR THIS SECTION ---\n"
+        f"{research_context}\n"
+        f"--- END CONTEXT ---\n\n"
+        f"Previous section ended with: \"...{previous_tail}\"\n"
+        f"Write ONLY the section text. No intros, no preambles, no 'Here is the section'."
+    )
+    
     section_body = ""
     used_fallback = False
     used_rewrite = False
     writer_error = ""
-    base_writer_timeout = min(
-        float(conf.writer_section_timeout_seconds),
-        max(20.0, float(conf.llm_timeout_seconds)),
-    )
-    for attempt, max_chars in enumerate((min(int(conf.max_research_bible_chars), 2800), 1500), start=1):
-        research_bible = _extract_relevant_research_slice(
-            str(state.get("research_bible", "")).strip(),
-            section_title=section_title,
-            evidence_hint=evidence_hint,
-            max_chars=max_chars,
+    
+    try:
+        response = await asyncio.wait_for(
+            llm.ainvoke([HumanMessage(content=prompt)]),
+            timeout=float(conf.llm_timeout_seconds),
         )
-        attempt_timeout = base_writer_timeout if attempt == 1 else max(16.0, base_writer_timeout * 0.35)
-        try:
-            response = await asyncio.wait_for(
-                llm.ainvoke(
-                    [
-                        SystemMessage(content=WRITER_PROMPT.format(i=index + 1, prev=previous_tail or "N/A")),
-                        HumanMessage(
-                            content=(
-                                f"Topic:\n{topic_focus}\n\n"
-                                f"Writing brief:\n{json.dumps(writing_brief, ensure_ascii=True)}\n\n"
-                                f"Section title: {section_title}\n"
-                                f"Target words: {target_words}\n"
-                                f"Guidelines: {guidelines}\n"
-                                f"Evidence hint: {evidence_hint}\n\n"
-                                f"Previous section tail:\n{previous_tail or 'N/A'}\n\n"
-                                f"Image candidates:\n{chr(10).join(image_candidates[:4]) or 'N/A'}\n\n"
-                                f"Research Bible:\n{research_bible}\n\n"
-                                "Write only this section in markdown paragraphs."
-                            )
-                        ),
-                    ]
-                ),
-                timeout=attempt_timeout,
-            )
-            section_body = strip_thinking_tokens(str(response.content or "").strip())
-            if section_body:
-                break
-        except Exception as exc:
-            writer_error = str(exc)
-            if attempt == 2:
-                section_body = ""
+        section_body = _sanitize_writer_output(response.content)
+    except Exception as e:
+        print(f"[WRITER] Error: {e}")
+        writer_error = str(e)
 
     if not section_body.strip():
         used_fallback = True
@@ -1451,12 +1544,43 @@ async def writer(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
     section_body = _sanitize_final_article(section_body, topic_focus, primary_keyword, ensure_h1=False)
 
     drafts[index] = section_body
-    quality_tag = "fallback" if used_fallback else ("rewrite" if used_rewrite else "llm")
-    error_suffix = f" | error={_truncate(writer_error, 160)}" if used_fallback and writer_error else ""
+    
+    log_msg = f"[WRITER] Drafted section {index + 1}/{len(outline)}: {section_title} ({len(section_body.split())} words)"
+    if used_fallback:
+        log_msg += " (fallback used)"
+        if writer_error:
+             log_msg += f" (Error: {writer_error})"
+        else:
+             log_msg += " (Reason: Empty LLM response)"
+    elif used_rewrite:
+        log_msg += " (rewritten)"
+
     return {
         "draft_sections": drafts,
         "current_section_index": index + 1,
-        "logs": [f"[WRITER] Drafted section {index + 1}/{len(outline)} ({quality_tag}): {section_title}{error_suffix}"],
+        "logs": [log_msg],
+        "current_section_context": "", 
+    }
+
+
+def publisher(state: AgentState) -> Dict[str, Any]:
+    """Combines all draft sections into the final article."""
+    drafts = state.get("draft_sections", {})
+    ordered_sections = _sorted_section_items(drafts)
+    
+    if not ordered_sections:
+        return {"final_article": "No content generated.", "logs": ["[PUBLISHER] Error: No drafts found."]}
+        
+    writing_brief = state.get("writing_brief", {}) or {}
+    topic = state.get("topic", "Article")
+    title = writing_brief.get("title") or topic
+    
+    # Simple compilation
+    final_text = f"# {title}\n\n" + "\n\n".join(ordered_sections)
+    
+    return {
+        "final_article": final_text,
+        "logs": [f"[PUBLISHER] Compiled final article ({len(final_text)} chars)."],
     }
 
 

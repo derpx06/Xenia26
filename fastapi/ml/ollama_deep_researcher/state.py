@@ -11,6 +11,8 @@ class AgentState(TypedDict, total=False):
     research_bible: str
     outline: List[Dict[str, Any]]
     current_section_index: int
+    current_section_topic: str
+    current_section_context: str
     draft_sections: Dict[int, str]
     final_article: str
     logs: Annotated[List[str], operator.add]

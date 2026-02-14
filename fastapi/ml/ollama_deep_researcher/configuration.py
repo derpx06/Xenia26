@@ -14,7 +14,7 @@ class Configuration(BaseModel):
         description="Number of research iterations to perform",
     )
     local_llm: str = Field(
-        default="llama3.2",
+        default="qwen2.5:7b",
         title="LLM Model Name",
         description="Name of the LLM model to use",
     )
@@ -77,32 +77,32 @@ class Configuration(BaseModel):
         description="Maximum number of characters passed to writer from synthesized research",
     )
     research_task_timeout_seconds: int = Field(
-        default=20,
+        default=120,
         title="Research Task Timeout Seconds",
         description="Timeout budget for each sub-topic research task batch",
     )
     llm_timeout_seconds: int = Field(
-        default=180,
+        default=360,
         title="LLM Timeout Seconds",
         description="Timeout budget for each LLM node call",
     )
     orchestrator_timeout_seconds: int = Field(
-        default=35,
+        default=120,
         title="Orchestrator Timeout Seconds",
         description="Timeout budget for orchestrator planning call",
     )
     planner_timeout_seconds: int = Field(
-        default=45,
+        default=120,
         title="Planner Timeout Seconds",
         description="Timeout budget for planner outline call",
     )
     writer_section_timeout_seconds: int = Field(
-        default=110,
+        default=400,
         title="Writer Section Timeout Seconds",
         description="Timeout budget for each writer section generation call",
     )
     editor_timeout_seconds: int = Field(
-        default=60,
+        default=180,
         title="Editor Timeout Seconds",
         description="Timeout budget for final editor/humanizer calls",
     )

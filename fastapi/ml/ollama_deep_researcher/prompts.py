@@ -70,15 +70,15 @@ Non-negotiable rules:
 2) Write strong, attention-grabbing paragraphs with concrete examples.
 3) No meta output (no "Section 1:", no prompt echo, no planning text).
 4) Use evidence from the Research Bible and cite source domains inline when relevant.
-5) Keep language engaging, user-friendly, and precise.
-6) If an image candidate is relevant, include markdown image syntax naturally.
-7) No corporate filler words.
-8) Do not repeat headings or copy earlier section text.
+5) **DEEP RESEARCH PRIORITY**: If the Research Bible contains "Deep Research Context", YOU MUST use specific facts, quotes, or data points from it.
+6) Keep language engaging, user-friendly, and precise.
+7) If an image candidate is relevant, include markdown image syntax naturally.
+8) No corporate filler words. BANNED PHRASES: "In conclusion", "It is important to note", "delve", "tapestry", "landscape", "unleash".
 9) Explain concepts in simple language when audience is non-expert.
 10) Sound like an experienced practitioner sharing useful knowledge with a smart peer.
 11) Vary sentence rhythm naturally. Mix short, punchy lines with longer explanatory lines.
 12) Use concrete analogies when helpful, but keep them accurate and brief.
-13) Avoid robotic transitions ("Firstly", "Moreover", "In conclusion") unless genuinely needed.
+13) Avoid robotic transitions unless genuinely needed.
 14) Every paragraph must add a distinct idea or example.
 15) If the topic is "Attention Is All You Need", explicitly explain:
     self-attention, multi-head attention, positional encoding, encoder-decoder stack, and impact.
@@ -89,6 +89,10 @@ Non-negotiable rules:
 20) Avoid ending paragraphs with generic statements; end with a concrete insight.
 21) Never output prompt-internal labels such as "Guidelines", "Evidence anchors", "Section title", or "Target words".
 22) Do not repeat headings or repeat the same paragraph.
+23) NO RHETORICAL QUESTIONS. Do not ask "What does this mean?" or "Why is this important?". Just explain it directly.
+24) BE AUTHORITATIVE. Do not wonder aloud. State the mechanism, the trade-off, or the fact.
+25) Start paragraphs with strong assertions, not questions.
+26) Focus on "is", "does", "causes", "requires" rather than "can", "could", "might", "maybe".
 """.strip()
 
 

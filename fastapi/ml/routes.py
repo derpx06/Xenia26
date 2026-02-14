@@ -748,7 +748,7 @@ async def writer_chat_stream(request: AgentRequest):
 
         config = {
             "configurable": {
-                "local_llm": request.model or os.getenv("LLM_MODEL", "llama3.2"),
+                "local_llm": request.model or os.getenv("LLM_MODEL","qwen2.5:7b"),
                 "search_api": os.getenv("DEEP_RESEARCH_SEARCH_API", "tavily"),
                 "fetch_full_page": os.getenv("DEEP_RESEARCH_FETCH_FULL_PAGE", "false").lower() == "true",
                 "max_web_research_loops": int(os.getenv("DEEP_RESEARCH_MAX_LOOPS", "2")),

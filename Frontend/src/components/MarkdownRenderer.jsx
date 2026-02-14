@@ -22,12 +22,13 @@ export default function MarkdownRenderer({ children, className = "" }) {
                                 style={vscDarkPlus}
                                 language={match[1]}
                                 PreTag="div"
-                                className="rounded-lg my-2 text-sm"
+                                className="rounded-lg my-4 text-sm shadow-lg border border-white/5"
                                 customStyle={{
-                                    margin: '0.5rem 0',
-                                    padding: '1rem',
-                                    background: '#1e1e1e',
-                                    overflowX: 'auto'
+                                    margin: '1.5rem 0',
+                                    padding: '1.25rem',
+                                    background: '#1a1a1a',
+                                    overflowX: 'auto',
+                                    borderRadius: '0.75rem'
                                 }}
                                 {...props}
                             >
@@ -35,7 +36,7 @@ export default function MarkdownRenderer({ children, className = "" }) {
                             </SyntaxHighlighter>
                         ) : (
                             <code
-                                className="bg-blue-600/20 px-1.5 py-0.5 rounded text-blue-300 font-mono text-xs"
+                                className="bg-white/10 px-1.5 py-0.5 rounded text-amber-200 font-mono text-sm"
                                 {...props}
                             >
                                 {children}
@@ -44,23 +45,26 @@ export default function MarkdownRenderer({ children, className = "" }) {
                     },
                     // Headings
                     h1: ({ children }) => (
-                        <h1 className="text-2xl sm:text-3xl font-bold text-white mt-2 mb-4 leading-tight">{children}</h1>
+                        <h1 className="text-3xl sm:text-4xl font-bold text-white mt-8 mb-6 leading-tight tracking-tight border-b border-white/10 pb-4">{children}</h1>
                     ),
                     h2: ({ children }) => (
-                        <h2 className="text-xl sm:text-2xl font-semibold text-white mt-6 mb-3 leading-snug">{children}</h2>
+                        <h2 className="text-2xl sm:text-3xl font-semibold text-white mt-10 mb-5 leading-snug tracking-tight">{children}</h2>
                     ),
                     h3: ({ children }) => (
-                        <h3 className="text-lg font-semibold text-neutral-100 mt-5 mb-2 leading-snug">{children}</h3>
+                        <h3 className="text-xl sm:text-2xl font-semibold text-neutral-100 mt-8 mb-4 leading-snug">{children}</h3>
+                    ),
+                    h4: ({ children }) => (
+                        <h4 className="text-lg font-semibold text-neutral-200 mt-6 mb-3 leading-snug">{children}</h4>
                     ),
                     // Lists
                     ul: ({ children }) => (
-                        <ul className="list-disc list-inside space-y-1 my-3 text-neutral-200">{children}</ul>
+                        <ul className="list-disc list-outside ml-6 space-y-2 my-4 text-neutral-300 marker:text-amber-400/70">{children}</ul>
                     ),
                     ol: ({ children }) => (
-                        <ol className="list-decimal list-inside space-y-1 my-3 text-neutral-200">{children}</ol>
+                        <ol className="list-decimal list-outside ml-6 space-y-2 my-4 text-neutral-300 marker:text-amber-400/70">{children}</ol>
                     ),
                     li: ({ children }) => (
-                        <li className="text-neutral-200 text-sm leading-relaxed mb-1">{children}</li>
+                        <li className="pl-2 text-neutral-200 text-[15px] sm:text-base leading-relaxed">{children}</li>
                     ),
                     // Links
                     a: ({ href, children }) => (
@@ -68,64 +72,66 @@ export default function MarkdownRenderer({ children, className = "" }) {
                             href={href}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-amber-300 hover:text-amber-200 underline underline-offset-2 break-words"
+                            className="text-amber-400 hover:text-amber-300 underline underline-offset-4 decoration-white/20 hover:decoration-amber-300 transition-all font-medium break-words"
                         >
                             {children}
                         </a>
                     ),
                     // Paragraphs
                     p: ({ children }) => (
-                        <p className="text-neutral-100/95 text-[15px] leading-7 my-3">{children}</p>
+                        <p className="text-neutral-200 text-[15px] sm:text-base leading-8 my-4 font-normal">{children}</p>
                     ),
                     // Blockquotes
                     blockquote: ({ children }) => (
-                        <blockquote className="border-l-2 border-amber-400 pl-3 italic text-neutral-300 my-3 text-sm">
+                        <blockquote className="border-l-4 border-amber-500/50 pl-6 py-2 my-8 italic text-neutral-300 bg-white/5 rounded-r-lg">
                             {children}
                         </blockquote>
                     ),
                     img: ({ src, alt }) => (
-                        <figure className="my-5">
-                            <img
-                                src={src}
-                                alt={alt || "Article visual"}
-                                loading="lazy"
-                                className="w-full rounded-xl border border-white/10 bg-black/30 object-contain max-h-[420px]"
-                            />
-                            {alt ? <figcaption className="mt-2 text-xs text-neutral-400">{alt}</figcaption> : null}
+                        <figure className="my-8 group">
+                            <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
+                                <img
+                                    src={src}
+                                    alt={alt || "Article visual"}
+                                    loading="lazy"
+                                    className="w-full h-auto object-cover max-h-[500px] transition-transform duration-700 group-hover:scale-[1.02]"
+                                />
+                            </div>
+                            {alt ? <figcaption className="mt-3 text-center text-sm text-neutral-500 italic">{alt}</figcaption> : null}
                         </figure>
                     ),
                     // Tables
                     table: ({ children }) => (
-                        <div className="overflow-x-auto my-3">
-                            <table className="min-w-full text-sm border border-white/10">
+                        <div className="overflow-x-auto my-8 rounded-lg border border-white/10 shadow-sm">
+                            <table className="min-w-full text-sm divide-y divide-white/10">
                                 {children}
                             </table>
                         </div>
                     ),
                     thead: ({ children }) => (
-                        <thead className="bg-white/5">{children}</thead>
+                        <thead className="bg-white/10">{children}</thead>
                     ),
                     tbody: ({ children }) => (
-                        <tbody className="divide-y divide-white/5">{children}</tbody>
+                        <tbody className="divide-y divide-white/5 bg-white/5">{children}</tbody>
                     ),
-                    tr: ({ children }) => <tr>{children}</tr>,
+                    tr: ({ children }) => <tr className="hover:bg-white/5 transition-colors">{children}</tr>,
                     th: ({ children }) => (
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-neutral-400 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-300 uppercase tracking-wider">
                             {children}
                         </th>
                     ),
                     td: ({ children }) => (
-                        <td className="px-3 py-2 text-xs text-neutral-200">{children}</td>
+                        <td className="px-4 py-3 text-sm text-neutral-300 whitespace-nowrap">{children}</td>
                     ),
                     // Horizontal rule
-                    hr: () => <hr className="my-3 border-white/10" />,
+                    hr: () => <hr className="my-8 border-white/10" />,
                     // Strong/Bold
                     strong: ({ children }) => (
-                        <strong className="font-bold text-white">{children}</strong>
+                        <strong className="font-semibold text-white">{children}</strong>
                     ),
                     // Emphasis/Italic
                     em: ({ children }) => (
-                        <em className="italic text-neutral-200">{children}</em>
+                        <em className="italic text-neutral-300">{children}</em>
                     ),
                 }}
             >
