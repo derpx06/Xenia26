@@ -8,6 +8,62 @@ import { WhatsAppPreviewCard } from "../components/thread/messages/WhatsAppPrevi
 import { LinkedInPreviewCard } from "../components/thread/messages/LinkedInPreviewCard";
 import ContactInputStep from "../components/ContactInputStep";
 
+const WRITER_FORMAT_OPTIONS = [
+  "Thought Leadership",
+  "How-to Guide",
+  "Case Study",
+  "Opinion Editorial",
+  "Product Narrative",
+];
+
+const WRITER_TONE_OPTIONS = [
+  "Insightful",
+  "Authoritative",
+  "Conversational",
+  "Data-Driven",
+  "Bold",
+];
+
+const WRITER_PROMPT_PRESETS = [
+  "Write an article on how AI agents improve outbound sales workflows for B2B SaaS teams.",
+  "Draft a founder-level thought leadership article on why personalization beats automation spam.",
+  "Create a practical guide for writing high-converting cold emails with examples.",
+  "Write an opinion piece on ethical AI outreach and trust-building in enterprise sales.",
+];
+
+const buildWriterInstruction = ({ userPrompt, title, format, tone, targetWords, audience, keyword }) => {
+  const cleanPrompt = (userPrompt || "").trim();
+  const cleanTitle = (title || "").trim();
+  const cleanAudience = (audience || "").trim();
+  const cleanKeyword = (keyword || "").trim();
+  const words = Number.parseInt(targetWords, 10);
+  const normalizedWords = Number.isFinite(words) && words > 0 ? words : 900;
+
+  return [
+    "Writer mode is active. Generate publication-quality long-form content.",
+    cleanTitle ? `Article title: ${cleanTitle}` : null,
+    `Format: ${format || "Thought Leadership"}`,
+    `Tone: ${tone || "Insightful"}`,
+    `Target audience: ${cleanAudience || "Business and growth leaders"}`,
+    `Target length: approximately ${normalizedWords} words`,
+    cleanKeyword ? `Primary SEO keyword: ${cleanKeyword}` : null,
+    "Requirements:",
+    "- Start with a strong hook in first 2 sentences",
+    "- Use clear section headings and short paragraphs",
+    "- Include at least 3 practical takeaways",
+    "- End with a concise CTA",
+    `User request: ${cleanPrompt}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+};
+
+const countWords = (value) => {
+  const text = (value || "").trim();
+  if (!text) return 0;
+  return text.split(/\s+/).filter(Boolean).length;
+};
+
 const CarouselContainer = ({ children }) => {
   const scrollRef = useRef(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -73,7 +129,19 @@ const CarouselContainer = ({ children }) => {
 const API_BASE_URL = "http://127.0.0.1:8000";
 const BACKEND_API_URL = "http://localhost:8080/api";
 
-export default function OutreachChat() {
+export default function OutreachChat({ mode = "outreach" }) {
+  const isWriterMode = mode === "writer";
+  const chatHistoryKey = isWriterMode ? "writer-chat-history" : "outreach-chat-history";
+  const assistantTitle = isWriterMode ? "Verve Writer" : "Verve AI";
+  const assistantIntro = isWriterMode
+    ? "Hello! I am Verve Writer. I can help you draft emails, LinkedIn posts, DMs, and polished content. What should we write?"
+    : "Hello! I am Verve. I can help you draft emails, find contacts, or negotiate deals. How can I help you today?";
+  const introTagline = isWriterMode
+    ? "Your content copilot for high-quality writing across channels."
+    : "Your autonomous engine for drafting, negotiating, and closing deals.";
+  const inputPlaceholder = isWriterMode
+    ? "Describe the article you need: topic, angle, audience, and constraints"
+    : "Type your request here... Use @ to mention contacts";
   // --- UI STATE ---
   const [hasStarted, setHasStarted] = useState(false);
   const [agentStatus, setAgentStatus] = useState("Idle");
@@ -81,13 +149,13 @@ export default function OutreachChat() {
   // --- LOGIC STATE ---
   // --- LOGIC STATE ---
   const [messages, setMessages] = useState(() => {
-    const saved = localStorage.getItem("outreach-chat-history");
+    const saved = localStorage.getItem(chatHistoryKey);
     try {
       return saved ? JSON.parse(saved) : [
         {
           role: "assistant",
           type: "text",
-          content: "Hello! I am Verve. I can help you draft emails, find contacts, or negotiate deals. How can I help you today?",
+          content: assistantIntro,
         },
       ];
     } catch (e) {
@@ -95,7 +163,7 @@ export default function OutreachChat() {
       return [{
         role: "assistant",
         type: "text",
-        content: "Hello! I am Verve. I can help you draft emails, find contacts, or negotiate deals. How can I help you today?",
+        content: assistantIntro,
       }];
     }
   });
@@ -125,12 +193,50 @@ export default function OutreachChat() {
   const [selectedCustomVoiceId, setSelectedCustomVoiceId] = useState("");
   const [ttsAvailable, setTtsAvailable] = useState(false);
   const [ttsError, setTtsError] = useState("");
+  const [writerTitle, setWriterTitle] = useState("");
+  const [writerFormat, setWriterFormat] = useState("Thought Leadership");
+  const [writerTone, setWriterTone] = useState("Insightful");
+  const [writerTargetWords, setWriterTargetWords] = useState("900");
+  const [writerAudience, setWriterAudience] = useState("Founders and growth leaders");
+  const [writerKeyword, setWriterKeyword] = useState("");
 
 
   // Persist messages to local storage
   useEffect(() => {
-    localStorage.setItem("outreach-chat-history", JSON.stringify(messages));
-  }, [messages]);
+    localStorage.setItem(chatHistoryKey, JSON.stringify(messages));
+  }, [chatHistoryKey, messages]);
+
+  useEffect(() => {
+    if (!isWriterMode) return;
+    try {
+      const raw = localStorage.getItem("writer-settings");
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      setWriterTitle(parsed?.title || "");
+      setWriterFormat(parsed?.format || "Thought Leadership");
+      setWriterTone(parsed?.tone || "Insightful");
+      setWriterTargetWords(parsed?.targetWords || "900");
+      setWriterAudience(parsed?.audience || "Founders and growth leaders");
+      setWriterKeyword(parsed?.keyword || "");
+    } catch (error) {
+      console.error("Failed to parse writer settings:", error);
+    }
+  }, [isWriterMode]);
+
+  useEffect(() => {
+    if (!isWriterMode) return;
+    localStorage.setItem(
+      "writer-settings",
+      JSON.stringify({
+        title: writerTitle,
+        format: writerFormat,
+        tone: writerTone,
+        targetWords: writerTargetWords,
+        audience: writerAudience,
+        keyword: writerKeyword,
+      })
+    );
+  }, [isWriterMode, writerTitle, writerFormat, writerTone, writerTargetWords, writerAudience, writerKeyword]);
 
   useEffect(() => {
     const resolveSenderIdentity = async () => {
@@ -505,7 +611,18 @@ export default function OutreachChat() {
 
   const sendMessage = async () => {
     if (!input.trim() && !selectedImage) return;
-    const originalInput = input;
+    const originalInput = input.trim();
+    const outboundPrompt = isWriterMode
+      ? buildWriterInstruction({
+        userPrompt: originalInput,
+        title: writerTitle,
+        format: writerFormat,
+        tone: writerTone,
+        targetWords: writerTargetWords,
+        audience: writerAudience,
+        keyword: writerKeyword,
+      })
+      : originalInput;
 
     // Filter mentions to ensure they are still in the input (simple check)
     const activeMentions = mentionedContacts.filter(c => originalInput.includes(c.name));
@@ -557,7 +674,7 @@ export default function OutreachChat() {
         },
         body: JSON.stringify({
           model: "qwen2.5:7b",
-          message: originalInput,
+          message: outboundPrompt,
           user_email: userEmail,
           sender_name: senderName,
           thread_id: assistantMsgId,
@@ -622,29 +739,31 @@ export default function OutreachChat() {
                   setStreamingContent("");
                   setAgentStatus("Complete");
 
-                  // Task 9 Support: Attempt JSON parse first
-                  let parsed = null;
-                  try {
-                    // Clean potential markdown blocks if LLM wraps JSON
-                    const cleanContent = msg.content.replace(/```json/g, "").replace(/```/g, "").trim();
-                    const json = JSON.parse(cleanContent);
-                    // Validate structure (must contain channel keys)
-                    if (json && (json.email || json.linkedin_dm || json.whatsapp || json.sms)) {
-                      parsed = json;
+                  if (!isWriterMode) {
+                    // Task 9 Support: Attempt JSON parse first
+                    let parsed = null;
+                    try {
+                      // Clean potential markdown blocks if LLM wraps JSON
+                      const cleanContent = msg.content.replace(/```json/g, "").replace(/```/g, "").trim();
+                      const json = JSON.parse(cleanContent);
+                      // Validate structure (must contain channel keys)
+                      if (json && (json.email || json.linkedin_dm || json.whatsapp || json.sms)) {
+                        parsed = json;
+                      }
+                    } catch (e) {
+                      // Fallback to markdown parsing
+                      parsed = parseMultiChannelMarkdown(msg.content);
                     }
-                  } catch (e) {
-                    // Fallback to markdown parsing
-                    parsed = parseMultiChannelMarkdown(msg.content);
-                  }
 
-                  if (parsed) {
-                    msg.generated_content = {
-                      email: parsed.email,
-                      whatsapp: parsed.whatsapp,
-                      sms: parsed.sms,
-                      linkedin: parsed.linkedin_dm || parsed.linkedin,
-                      instagram: parsed.instagram_dm || parsed.instagram
-                    };
+                    if (parsed) {
+                      msg.generated_content = {
+                        email: parsed.email,
+                        whatsapp: parsed.whatsapp,
+                        sms: parsed.sms,
+                        linkedin: parsed.linkedin_dm || parsed.linkedin,
+                        instagram: parsed.instagram_dm || parsed.instagram
+                      };
+                    }
                   }
                 }
 
@@ -729,8 +848,13 @@ export default function OutreachChat() {
     })
     .slice(0, 8);
 
+  const latestAssistantDraft =
+    [...messages].reverse().find((message) => message.role === "assistant" && message.content)?.content || "";
+  const latestDraftWordCount = countWords(latestAssistantDraft);
+  const latestDraftReadMinutes = Math.max(1, Math.ceil(latestDraftWordCount / 220));
+
   return (
-    <div className="flex h-screen bg-[#020202] text-white overflow-hidden font-sans selection:bg-purple-500/30">
+    <div className={`flex h-screen text-white overflow-hidden ${isWriterMode ? "font-serif selection:bg-amber-300/40" : "font-sans selection:bg-purple-500/30"} bg-[#020202]`}>
 
       {/* ANIMATION STYLES */}
       <style>{`
@@ -771,51 +895,129 @@ export default function OutreachChat() {
           background: linear-gradient(180deg, #22d3ee 0%, #3b82f6 100%);
           transform-origin: center bottom;
         }
+        .writer-bg {
+          background-image:
+            radial-gradient(circle at 8% 10%, rgba(251, 191, 36, 0.15) 0%, transparent 35%),
+            radial-gradient(circle at 88% 14%, rgba(217, 119, 6, 0.13) 0%, transparent 42%),
+            linear-gradient(180deg, #0f0b06 0%, #060505 55%, #040404 100%);
+        }
+        .writer-grid {
+          background-image:
+            linear-gradient(rgba(251, 191, 36, 0.06) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(251, 191, 36, 0.06) 1px, transparent 1px);
+          background-size: 28px 28px;
+          mask-image: radial-gradient(circle at center, black 45%, transparent 100%);
+          opacity: 0.25;
+        }
+        .article-sheet {
+          background: linear-gradient(180deg, rgba(26, 18, 10, 0.86), rgba(14, 10, 7, 0.92));
+          border: 1px solid rgba(251, 191, 36, 0.2);
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(251, 191, 36, 0.08) inset;
+        }
+        .writer-chip {
+          background: rgba(245, 158, 11, 0.14);
+          border: 1px solid rgba(245, 158, 11, 0.35);
+        }
       `}</style>
 
       <Sidebar />
 
       {/* Main Content Area */}
-      <div className="flex-1 w-full relative aurora-bg flex flex-col h-full overflow-x-hidden">
+      <div className={`flex-1 w-full relative flex flex-col h-full overflow-x-hidden ${isWriterMode ? "writer-bg" : "aurora-bg"}`}>
+        {isWriterMode && <div className="pointer-events-none absolute inset-0 writer-grid" />}
 
         {/* --- STATE 1: INTRO SCREEN --- */}
         {!hasStarted ? (
           <div className="flex-1 flex flex-col items-center justify-center p-6 relative z-10 animate-in fade-in duration-700">
 
-            {/* --- 3D ROBOT VISUAL (High Quality Orange Robot) --- */}
-            <div className="mb-8 relative w-full max-w-[300px] md:max-w-[450px] aspect-square flex items-center justify-center -mt-20">
-              {/* Glow behind robot */}
-              <div className="absolute inset-0 bg-orange-500/20 blur-[100px] rounded-full animate-pulse"></div>
-
-              {/* This image is a High-Quality 3D Render of an Orange/Yellow Robot */}
-              <img
-                src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExOTd4aXpqOG9qbXJrbzA4a3A4c2N4ZjJoYzh4aHpwa2xsMHQ1eXoxeiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/5k5vZwRFZR5aZeniqb/giphy.gif"
-                alt="3D AI Robot"
-                className="w-full h-full object-contain robot-3d-anim relative z-10"
-              />
-            </div>
-
-            <div className="text-center space-y-8 max-w-2xl relative z-20 -mt-24">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-orange-300 mb-2 backdrop-blur-md shadow-lg">
-                <Sparkles className="w-3 h-3 text-orange-400" /> NEXT-GEN AI AGENT
+            {!isWriterMode ? (
+              <>
+                {/* --- 3D ROBOT VISUAL (High Quality Orange Robot) --- */}
+                <div className="mb-8 relative w-full max-w-[300px] md:max-w-[450px] aspect-square flex items-center justify-center -mt-20">
+                  <div className="absolute inset-0 bg-orange-500/20 blur-[100px] rounded-full animate-pulse"></div>
+                  <img
+                    src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExOTd4aXpqOG9qbXJrbzA4a3A4c2N4ZjJoYzh4aHpwa2xsMHQ1eXoxeiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/5k5vZwRFZR5aZeniqb/giphy.gif"
+                    alt="3D AI Robot"
+                    className="w-full h-full object-contain robot-3d-anim relative z-10"
+                  />
+                </div>
+                <div className="text-center space-y-8 max-w-2xl relative z-20 -mt-24">
+                  <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-orange-300 mb-2 backdrop-blur-md shadow-lg">
+                    <Sparkles className="w-3 h-3 text-orange-400" /> NEXT-GEN AI AGENT
+                  </div>
+                  <h1 className="text-5xl md:text-7xl font-bold tracking-tighter bg-gradient-to-b from-white via-white to-neutral-500 bg-clip-text text-transparent drop-shadow-sm">
+                    Hello, Human.
+                  </h1>
+                  <p className="text-neutral-400 text-lg md:text-xl font-medium leading-relaxed max-w-lg mx-auto">
+                    I am <span className="text-white">{assistantTitle}</span>. {introTagline}
+                  </p>
+                  <button
+                    onClick={() => setHasStarted(true)}
+                    className="group relative inline-flex items-center gap-3 px-8 py-4 bg-white text-black rounded-full font-bold text-lg shadow-[0_0_50px_rgba(255,255,255,0.2)] hover:shadow-[0_0_80px_rgba(255,255,255,0.4)] transition-all transform hover:scale-105 active:scale-95"
+                  >
+                    Initialize System
+                    <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="w-full max-w-5xl relative z-20 grid lg:grid-cols-[1.1fr_0.9fr] gap-8 items-center">
+                <div className="space-y-6">
+                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full writer-chip text-[11px] tracking-widest uppercase text-amber-200">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Editorial Intelligence
+                  </div>
+                  <h1 className="text-4xl md:text-6xl text-amber-50 leading-tight">
+                    Write industry-grade articles with a focused AI writer.
+                  </h1>
+                  <p className="text-amber-100/70 text-lg leading-relaxed max-w-2xl">
+                    {assistantTitle} builds structured long-form articles with clear hooks, section flow, practical takeaways, and strong closing calls-to-action.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    {WRITER_PROMPT_PRESETS.slice(0, 2).map((preset) => (
+                      <button
+                        key={preset}
+                        onClick={() => {
+                          setInput(preset);
+                          setHasStarted(true);
+                        }}
+                        className="px-4 py-2.5 rounded-xl bg-amber-300/10 border border-amber-300/30 text-amber-100 text-sm hover:bg-amber-300/15 transition-colors"
+                      >
+                        {preset.length > 62 ? `${preset.slice(0, 62)}...` : preset}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setHasStarted(true)}
+                    className="group inline-flex items-center gap-2 px-7 py-3.5 rounded-xl bg-amber-200 text-[#2b1606] font-semibold shadow-[0_20px_60px_rgba(251,191,36,0.2)] hover:bg-amber-100 transition-colors"
+                  >
+                    Start Writing
+                    <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  </button>
+                </div>
+                <div className="article-sheet rounded-2xl p-6 md:p-7">
+                  <p className="text-[11px] tracking-[0.2em] uppercase text-amber-300/70 mb-4">Live Brief</p>
+                  <div className="space-y-4 text-sm">
+                    <div>
+                      <p className="text-amber-400/80 text-xs mb-1">Format</p>
+                      <p className="text-amber-50">{writerFormat}</p>
+                    </div>
+                    <div>
+                      <p className="text-amber-400/80 text-xs mb-1">Audience</p>
+                      <p className="text-amber-50">{writerAudience}</p>
+                    </div>
+                    <div>
+                      <p className="text-amber-400/80 text-xs mb-1">Tone + Length</p>
+                      <p className="text-amber-50">{writerTone} · {writerTargetWords} words</p>
+                    </div>
+                    <div>
+                      <p className="text-amber-400/80 text-xs mb-1">SEO Keyword</p>
+                      <p className="text-amber-50">{writerKeyword || "Not set yet"}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
-
-              <h1 className="text-5xl md:text-7xl font-bold tracking-tighter bg-gradient-to-b from-white via-white to-neutral-500 bg-clip-text text-transparent drop-shadow-sm">
-                Hello, Human.
-              </h1>
-
-              <p className="text-neutral-400 text-lg md:text-xl font-medium leading-relaxed max-w-lg mx-auto">
-                I am <span className="text-white">Verve</span>. Your autonomous engine for drafting, negotiating, and closing deals.
-              </p>
-
-              <button
-                onClick={() => setHasStarted(true)}
-                className="group relative inline-flex items-center gap-3 px-8 py-4 bg-white text-black rounded-full font-bold text-lg shadow-[0_0_50px_rgba(255,255,255,0.2)] hover:shadow-[0_0_80px_rgba(255,255,255,0.4)] transition-all transform hover:scale-105 active:scale-95"
-              >
-                Initialize System
-                <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-              </button>
-            </div>
+            )}
           </div>
         ) : (
 
@@ -826,16 +1028,21 @@ export default function OutreachChat() {
             <div className="absolute top-0 left-0 right-0 z-30 p-4 sm:p-6">
               <div className="glass-panel rounded-2xl px-4 pl-14 sm:pl-6 py-4 flex justify-between items-center shadow-lg">
                 <div className="flex items-center gap-4">
-                  {/* Small version of the 3D head */}
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500/20 to-yellow-500/20 flex items-center justify-center border border-white/10 overflow-hidden">
-                    <img
-                      src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExOTd4aXpqOG9qbXJrbzA4a3A4c2N4ZjJoYzh4aHpwa2xsMHQ1eXoxeiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/5k5vZwRFZR5aZeniqb/giphy.gif"
-                      className="w-12 h-12 object-cover translate-y-1"
-                      alt="Mini Robot"
-                    />
-                  </div>
+                  {!isWriterMode ? (
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500/20 to-yellow-500/20 flex items-center justify-center border border-white/10 overflow-hidden">
+                      <img
+                        src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExOTd4aXpqOG9qbXJrbzA4a3A4c2N4ZjJoYzh4aHpwa2xsMHQ1eXoxeiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/5k5vZwRFZR5aZeniqb/giphy.gif"
+                        className="w-12 h-12 object-cover translate-y-1"
+                        alt="Mini Robot"
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-10 h-10 rounded-xl bg-amber-300/15 border border-amber-300/35 flex items-center justify-center text-amber-200">
+                      <Sparkles className="w-5 h-5" />
+                    </div>
+                  )}
                   <div>
-                    <h1 className="text-lg font-bold text-white">Verve AI</h1>
+                    <h1 className="text-lg font-bold text-white">{assistantTitle}</h1>
                     <div className="flex items-center gap-1.5">
                       <span className="relative flex h-1.5 w-1.5">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -846,9 +1053,9 @@ export default function OutreachChat() {
                   </div>
                 </div>
                 {/* Agent Live Status Chip */}
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 border border-white/10 text-xs text-zinc-300">
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs ${isWriterMode ? "writer-chip text-amber-100" : "bg-black/40 border border-white/10 text-zinc-300"}`}>
                   <span className={`w-2 h-2 rounded-full ${isStreaming ? "bg-orange-400 animate-pulse" : "bg-emerald-400"}`} />
-                  <span className="font-semibold">Agent Live</span>
+                  <span className="font-semibold">{isWriterMode ? "Writer Live" : "Agent Live"}</span>
                   <span className="text-zinc-400">·</span>
                   <span className="max-w-[200px] truncate">{agentStatus}</span>
                 </div>
@@ -860,10 +1067,76 @@ export default function OutreachChat() {
             </div>
 
             {/* Chat Scroll Area */}
-            <div className="flex-1 overflow-y-auto px-4 md:px-20 pt-24 md:pt-28 pb-6 space-y-6 custom-scrollbar scroll-smooth">
+            <div className={`flex-1 overflow-y-auto pt-24 md:pt-28 pb-6 space-y-6 custom-scrollbar scroll-smooth ${isWriterMode ? "px-4 md:px-12" : "px-4 md:px-20"}`}>
+                {isWriterMode && (
+                  <div className="article-sheet rounded-2xl p-4 md:p-5 max-w-4xl mx-auto">
+                    <p className="text-[11px] tracking-[0.2em] uppercase text-amber-300/70 mb-3">Active Article Brief</p>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <span className="writer-chip rounded-full px-3 py-1 text-amber-100">{writerFormat}</span>
+                      <span className="writer-chip rounded-full px-3 py-1 text-amber-100">{writerTone}</span>
+                      <span className="writer-chip rounded-full px-3 py-1 text-amber-100">{writerTargetWords || "900"} words</span>
+                      <span className="writer-chip rounded-full px-3 py-1 text-amber-100">{writerAudience || "Audience not set"}</span>
+                      {writerKeyword && (
+                        <span className="writer-chip rounded-full px-3 py-1 text-amber-100">SEO: {writerKeyword}</span>
+                      )}
+                    </div>
+                    {writerTitle && (
+                      <p className="text-amber-50 mt-3 text-sm">
+                        <span className="text-amber-300/80">Title:</span> {writerTitle}
+                      </p>
+                    )}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
+                      <div className="rounded-xl border border-amber-300/20 bg-black/20 px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-wider text-amber-300/70">Draft Words</p>
+                        <p className="text-amber-50 text-sm font-semibold">{latestDraftWordCount || 0}</p>
+                      </div>
+                      <div className="rounded-xl border border-amber-300/20 bg-black/20 px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-wider text-amber-300/70">Read Time</p>
+                        <p className="text-amber-50 text-sm font-semibold">{latestDraftReadMinutes} min</p>
+                      </div>
+                      <div className="rounded-xl border border-amber-300/20 bg-black/20 px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-wider text-amber-300/70">Primary Tone</p>
+                        <p className="text-amber-50 text-sm font-semibold">{writerTone}</p>
+                      </div>
+                      <div className="rounded-xl border border-amber-300/20 bg-black/20 px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-wider text-amber-300/70">Structure</p>
+                        <p className="text-amber-50 text-sm font-semibold">{writerFormat}</p>
+                      </div>
+                    </div>
+                    <div className="mt-4">
+                      <p className="text-[10px] uppercase tracking-[0.18em] text-amber-300/65 mb-2">Quick Actions</p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => setInput("Create a structured outline with H2/H3 sections before writing the full article.")}
+                          className="px-3 py-1.5 rounded-lg border border-amber-300/25 bg-amber-300/10 text-[11px] text-amber-100 hover:bg-amber-300/15 transition-colors"
+                        >
+                          Build Outline
+                        </button>
+                        <button
+                          onClick={() => setInput(`Expand this article with one extra practical section and examples:\n\n${latestAssistantDraft || ""}`)}
+                          className="px-3 py-1.5 rounded-lg border border-amber-300/25 bg-amber-300/10 text-[11px] text-amber-100 hover:bg-amber-300/15 transition-colors"
+                        >
+                          Expand Draft
+                        </button>
+                        <button
+                          onClick={() => setInput(`Tighten this article to ${Math.max(400, Number.parseInt(writerTargetWords || "900", 10) - 200)} words while keeping clarity:\n\n${latestAssistantDraft || ""}`)}
+                          className="px-3 py-1.5 rounded-lg border border-amber-300/25 bg-amber-300/10 text-[11px] text-amber-100 hover:bg-amber-300/15 transition-colors"
+                        >
+                          Shorten Draft
+                        </button>
+                        <button
+                          onClick={() => setInput(`Improve this article for SEO keyword "${writerKeyword || "ai outreach"}" and preserve readability:\n\n${latestAssistantDraft || ""}`)}
+                          className="px-3 py-1.5 rounded-lg border border-amber-300/25 bg-amber-300/10 text-[11px] text-amber-100 hover:bg-amber-300/15 transition-colors"
+                        >
+                          SEO Pass
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {messages.map((msg, i) => (
                   <div key={i} className={`flex w-full ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className={`flex flex-col max-w-2xl ${msg.role === "user" ? "items-end" : "items-start"} w-full`}>
+                    <div className={`flex flex-col ${isWriterMode ? "max-w-4xl" : "max-w-2xl"} ${msg.role === "user" ? "items-end" : "items-start"} w-full`}>
                       {/*
                         Show drafting loaders only while the current assistant response is actively streaming.
                         This prevents stale WRITER state from keeping the loader visible after output is ready.
@@ -883,7 +1156,7 @@ export default function OutreachChat() {
                       {msg.role === 'assistant' && (
                       ((isStreaming && i === messages.length - 1) ||
                         (msg.tool_calls?.length > 0 || msg.tool_results?.length > 0 || msg.thoughts?.length > 0 || msg.active_node)) && (
-                        <div className="mb-4 w-full max-w-2xl flex flex-col gap-0 bg-[#0F0F0F] border border-white/5 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 backdrop-blur-md">
+                        <div className={`mb-4 w-full ${isWriterMode ? "max-w-4xl" : "max-w-2xl"} flex flex-col gap-0 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 backdrop-blur-md ${isWriterMode ? "bg-[#120d08]/90 border border-amber-300/15" : "bg-[#0F0F0F] border border-white/5"}`}>
 
                           {/* 1. HEADER & PROGRESS STEPS */}
                           <div className="p-4 border-b border-white/5 bg-[#141414]">
@@ -993,8 +1266,12 @@ export default function OutreachChat() {
                     {/* MESSAGE BUBBLE */}
                     {(!hasStructuredChannelContent(msg) || msg.role === "user") && (
                       <div className={`px-4 sm:px-6 py-4 rounded-2xl text-sm shadow-xl backdrop-blur-md border ${msg.role === "user"
-                        ? "bg-purple-600/20 border-purple-500/30 text-white rounded-tr-sm"
-                        : "bg-[#111]/80 border-white/10 text-neutral-200 rounded-tl-sm w-full"
+                        ? isWriterMode
+                          ? "bg-amber-300/15 border-amber-300/35 text-amber-50 rounded-tr-sm"
+                          : "bg-purple-600/20 border-purple-500/30 text-white rounded-tr-sm"
+                        : isWriterMode
+                          ? "article-sheet text-amber-50 rounded-tl-sm w-full"
+                          : "bg-[#111]/80 border-white/10 text-neutral-200 rounded-tl-sm w-full"
                         }`}>
                         {msg.image && (
                           <div className="mb-3">
@@ -1011,7 +1288,9 @@ export default function OutreachChat() {
                             <span className="font-medium">Drafting personalized content...</span>
                           </div>
                         ) : msg.content ? (
-                          <MarkdownRenderer>{msg.content}</MarkdownRenderer>
+                          <div className={isWriterMode && msg.role === "assistant" ? "text-[15px] leading-7 tracking-[0.01em] space-y-4" : ""}>
+                            <MarkdownRenderer>{msg.content}</MarkdownRenderer>
+                          </div>
                         ) : (
                           <span className="animate-pulse text-zinc-500">Thinking...</span>
                         )}
@@ -1144,8 +1423,8 @@ export default function OutreachChat() {
                                 <div className="p-6 rounded-2xl bg-white/5 border border-white/10 border-dashed flex items-center gap-4 text-zinc-500">
                                   <div className="w-10 h-10 rounded-xl bg-zinc-800 animate-spin flex items-center justify-center">⏳</div>
                                   <div>
-                                    <p className="text-sm font-bold">Drafting personalized outreach...</p>
-                                    <p className="text-xs">Personalizing for prospect profile</p>
+                                    <p className="text-sm font-bold">{isWriterMode ? "Drafting polished content..." : "Drafting personalized outreach..."}</p>
+                                    <p className="text-xs">{isWriterMode ? "Optimizing structure, tone, and clarity" : "Personalizing for prospect profile"}</p>
                                   </div>
                                 </div>
                               </div>
@@ -1203,33 +1482,53 @@ export default function OutreachChat() {
                           </div>
                         ) : !hasStructuredChannelContent(msg) ? (
                           <div className="flex flex-wrap gap-2">
-                            <button
-                              onClick={() => handleSendAction(i, msg.generated_content?.email || msg.streaming_generated_content?.email || msg.content, 'email')}
-                              className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-purple-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2"
-                            >
-                              <Mail className="w-3 h-3" /> Email
-                            </button>
-                            <button
-                              onClick={() => handleSendAction(i, msg.generated_content?.whatsapp || msg.streaming_generated_content?.whatsapp || msg.content, 'whatsapp')}
-                              className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-green-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2"
-                            >
-                              <Phone className="w-3 h-3" /> WhatsApp
-                            </button>
-                            <button
-                              onClick={() => handleSendAction(i, msg.generated_content?.linkedin || msg.streaming_generated_content?.linkedin || msg.content, 'linkedin')}
-                              className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-700/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2"
-                            >
-                              {/* Using Map icon temporarily for LinkedIn or text, reusing generic icon if needed, but text is clearer */}
-                              <span className="font-bold text-[10px] bg-blue-600 text-white px-1 rounded">in</span> LinkedIn
-                            </button>
-                            <button
-                              onClick={() => handleGenerateAudio(msg.content, msg.id)}
-                              disabled={!ttsAvailable || loadingAction}
-                              title={!ttsAvailable ? (ttsError || "TTS unavailable on backend") : ""}
-                              className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              <Volume2 className="w-3 h-3" /> Audio
-                            </button>
+                            {!isWriterMode ? (
+                              <>
+                                <button
+                                  onClick={() => handleSendAction(i, msg.generated_content?.email || msg.streaming_generated_content?.email || msg.content, 'email')}
+                                  className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-purple-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2"
+                                >
+                                  <Mail className="w-3 h-3" /> Email
+                                </button>
+                                <button
+                                  onClick={() => handleSendAction(i, msg.generated_content?.whatsapp || msg.streaming_generated_content?.whatsapp || msg.content, 'whatsapp')}
+                                  className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-green-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2"
+                                >
+                                  <Phone className="w-3 h-3" /> WhatsApp
+                                </button>
+                                <button
+                                  onClick={() => handleSendAction(i, msg.generated_content?.linkedin || msg.streaming_generated_content?.linkedin || msg.content, 'linkedin')}
+                                  className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-700/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2"
+                                >
+                                  <span className="font-bold text-[10px] bg-blue-600 text-white px-1 rounded">in</span> LinkedIn
+                                </button>
+                                <button
+                                  onClick={() => handleGenerateAudio(msg.content, msg.id)}
+                                  disabled={!ttsAvailable || loadingAction}
+                                  title={!ttsAvailable ? (ttsError || "TTS unavailable on backend") : ""}
+                                  className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <Volume2 className="w-3 h-3" /> Audio
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => handleGenerateAudio(msg.content, msg.id)}
+                                  disabled={!ttsAvailable || loadingAction}
+                                  title={!ttsAvailable ? (ttsError || "TTS unavailable on backend") : ""}
+                                  className="px-3 py-1.5 bg-amber-300/10 border border-amber-300/30 hover:bg-amber-300/15 rounded-lg text-xs font-medium text-amber-100 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <Volume2 className="w-3 h-3" /> Narrate Draft
+                                </button>
+                                <button
+                                  onClick={() => setInput(`Improve this article draft by strengthening clarity and examples:\n\n${msg.content || ""}`)}
+                                  className="px-3 py-1.5 bg-[#1A1A1A] border border-amber-300/20 hover:border-amber-300/40 rounded-lg text-xs font-medium text-amber-100/85 hover:text-amber-50 transition-all"
+                                >
+                                  Refine This Draft
+                                </button>
+                              </>
+                            )}
                           </div>
                         ) : (
                           <div className="text-[11px] text-zinc-500 px-1">
@@ -1249,7 +1548,71 @@ export default function OutreachChat() {
 
 
             {/* Input Area */}
-            <div className="p-4 sm:p-6 relative z-40 shrink-0 w-full max-w-4xl mx-auto">
+            <div className={`p-4 sm:p-6 relative z-40 shrink-0 w-full mx-auto ${isWriterMode ? "max-w-6xl" : "max-w-4xl"}`}>
+              {isWriterMode && (
+                <div className="mb-4 article-sheet rounded-2xl p-4 sm:p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <p className="text-xs tracking-[0.2em] uppercase text-amber-300/75">Writer Studio</p>
+                    <div className="text-[11px] text-amber-100/70">Prompt context is auto-injected into each request</div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <input
+                      value={writerTitle}
+                      onChange={(e) => setWriterTitle(e.target.value)}
+                      placeholder="Article title (optional)"
+                      className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 placeholder:text-amber-200/40 outline-none focus:border-amber-300/45"
+                    />
+                    <input
+                      value={writerAudience}
+                      onChange={(e) => setWriterAudience(e.target.value)}
+                      placeholder="Audience (e.g. SaaS founders)"
+                      className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 placeholder:text-amber-200/40 outline-none focus:border-amber-300/45"
+                    />
+                    <select
+                      value={writerFormat}
+                      onChange={(e) => setWriterFormat(e.target.value)}
+                      className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 outline-none focus:border-amber-300/45"
+                    >
+                      {WRITER_FORMAT_OPTIONS.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={writerTone}
+                      onChange={(e) => setWriterTone(e.target.value)}
+                      className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 outline-none focus:border-amber-300/45"
+                    >
+                      {WRITER_TONE_OPTIONS.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                    <input
+                      value={writerTargetWords}
+                      onChange={(e) => setWriterTargetWords(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))}
+                      placeholder="Target words (e.g. 900)"
+                      className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 placeholder:text-amber-200/40 outline-none focus:border-amber-300/45"
+                    />
+                    <input
+                      value={writerKeyword}
+                      onChange={(e) => setWriterKeyword(e.target.value)}
+                      placeholder="Primary SEO keyword (optional)"
+                      className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 placeholder:text-amber-200/40 outline-none focus:border-amber-300/45"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {WRITER_PROMPT_PRESETS.map((preset) => (
+                      <button
+                        key={preset}
+                        onClick={() => setInput(preset)}
+                        className="px-3 py-1.5 rounded-lg bg-amber-300/10 border border-amber-300/25 text-[11px] text-amber-100 hover:bg-amber-300/15 transition-colors"
+                      >
+                        {preset.length > 56 ? `${preset.slice(0, 56)}...` : preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Mentions Dropdown */}
               {showMentions && (
                 <div className="absolute bottom-24 left-6 z-50 w-64 bg-[#111] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-2">
@@ -1285,8 +1648,8 @@ export default function OutreachChat() {
                 </div>
               )}
 
-              <div className="max-w-4xl mx-auto relative group">
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl opacity-20 group-focus-within:opacity-60 blur transition duration-500"></div>
+              <div className={`mx-auto relative group ${isWriterMode ? "max-w-6xl" : "max-w-4xl"}`}>
+                <div className={`absolute -inset-0.5 rounded-2xl opacity-20 group-focus-within:opacity-60 blur transition duration-500 ${isWriterMode ? "bg-gradient-to-r from-amber-400 to-orange-500" : "bg-gradient-to-r from-purple-600 to-blue-600"}`}></div>
 
                 {/* Image Preview */}
                 {selectedImage && (
@@ -1301,7 +1664,7 @@ export default function OutreachChat() {
                   </div>
                 )}
 
-                <div className="relative flex items-center bg-[#0A0A0A] border border-white/10 rounded-2xl px-4 py-3 gap-4 shadow-2xl">
+                <div className={`relative flex items-center rounded-2xl px-4 py-3 gap-4 shadow-2xl ${isWriterMode ? "bg-[#120d08] border border-amber-300/25" : "bg-[#0A0A0A] border border-white/10"}`}>
 
                   {/* File Input */}
                   <input
@@ -1313,7 +1676,7 @@ export default function OutreachChat() {
                   />
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="p-2 -ml-2 rounded-xl text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"
+                    className={`p-2 -ml-2 rounded-xl transition-colors ${isWriterMode ? "text-amber-200/70 hover:text-amber-100 hover:bg-amber-300/10" : "text-neutral-400 hover:text-white hover:bg-white/10"}`}
                   >
                     <Paperclip className="w-5 h-5" />
                   </button>
@@ -1353,14 +1716,14 @@ export default function OutreachChat() {
                         sendMessage();
                       }
                     }}
-                    placeholder="Type your request here... Use @ to mention contacts"
-                    className="flex-1 bg-transparent outline-none text-base text-white placeholder-neutral-600 font-medium"
+                    placeholder={inputPlaceholder}
+                    className={`flex-1 bg-transparent outline-none text-base font-medium ${isWriterMode ? "text-amber-50 placeholder-amber-100/40" : "text-white placeholder-neutral-600"}`}
                     disabled={isStreaming}
                     autoFocus
                   />
                   <button
                     onClick={sendMessage}
-                    className="p-3 rounded-xl bg-purple-600 text-white hover:bg-purple-500 transition-all shadow-lg shadow-purple-900/20"
+                    className={`p-3 rounded-xl transition-all shadow-lg ${isWriterMode ? "bg-amber-200 text-[#2b1606] hover:bg-amber-100 shadow-amber-500/20" : "bg-purple-600 text-white hover:bg-purple-500 shadow-purple-900/20"}`}
                     disabled={isStreaming || (!input.trim() && !selectedImage)}
                   >
                     {isStreaming ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
