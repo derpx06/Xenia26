@@ -8,7 +8,6 @@ import { WhatsAppPreviewCard } from "../components/thread/messages/WhatsAppPrevi
 import { LinkedInPreviewCard } from "../components/thread/messages/LinkedInPreviewCard";
 import ContactInputStep from "../components/ContactInputStep";
 import ChatSidebar from "../components/ChatSidebar";
-import { useDebounce } from "use-debounce";
 import { motion, AnimatePresence } from "framer-motion";
 
 const CarouselContainer = ({ children }) => {
@@ -78,6 +77,17 @@ const countWords = (text) => {
   return text.trim().split(/\s+/).filter(Boolean).length;
 };
 
+const useDebouncedValue = (value, delay = 300) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(timeoutId);
+  }, [value, delay]);
+
+  return debouncedValue;
+};
+
 const WRITER_FORMAT_OPTIONS = [
   "Thought Leadership",
   "How-to Guide",
@@ -130,7 +140,7 @@ export default function OutreachChat({ mode = "outreach" }) {
   const [chatSessions, setChatSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [messages, setMessages] = useState([]); // Loaded from DB or empty
-  const [messagesDebounced] = useDebounce(messages, 2000); // Auto-save trigger
+  const messagesDebounced = useDebouncedValue(messages, 2000); // Auto-save trigger
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
