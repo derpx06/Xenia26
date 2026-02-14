@@ -199,6 +199,7 @@ export default function OutreachChat({ mode = "outreach" }) {
   const [writerTargetWords, setWriterTargetWords] = useState("900");
   const [writerAudience, setWriterAudience] = useState("Founders and growth leaders");
   const [writerKeyword, setWriterKeyword] = useState("");
+  const [isWriterStudioOpen, setIsWriterStudioOpen] = useState(true);
 
 
   // Persist messages to local storage
@@ -218,6 +219,7 @@ export default function OutreachChat({ mode = "outreach" }) {
       setWriterTargetWords(parsed?.targetWords || "900");
       setWriterAudience(parsed?.audience || "Founders and growth leaders");
       setWriterKeyword(parsed?.keyword || "");
+      setIsWriterStudioOpen(parsed?.studioOpen !== false);
     } catch (error) {
       console.error("Failed to parse writer settings:", error);
     }
@@ -234,9 +236,10 @@ export default function OutreachChat({ mode = "outreach" }) {
         targetWords: writerTargetWords,
         audience: writerAudience,
         keyword: writerKeyword,
+        studioOpen: isWriterStudioOpen,
       })
     );
-  }, [isWriterMode, writerTitle, writerFormat, writerTone, writerTargetWords, writerAudience, writerKeyword]);
+  }, [isWriterMode, writerTitle, writerFormat, writerTone, writerTargetWords, writerAudience, writerKeyword, isWriterStudioOpen]);
 
   useEffect(() => {
     const resolveSenderIdentity = async () => {
@@ -1538,63 +1541,79 @@ export default function OutreachChat({ mode = "outreach" }) {
                 <div className="mb-4 article-sheet rounded-2xl p-4 sm:p-5">
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                     <p className="text-xs tracking-[0.2em] uppercase text-amber-300/75">Writer Studio</p>
-                    <div className="text-[11px] text-amber-100/70">Prompt context is auto-injected into each request</div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <input
-                      value={writerTitle}
-                      onChange={(e) => setWriterTitle(e.target.value)}
-                      placeholder="Article title (optional)"
-                      className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 placeholder:text-amber-200/40 outline-none focus:border-amber-300/45"
-                    />
-                    <input
-                      value={writerAudience}
-                      onChange={(e) => setWriterAudience(e.target.value)}
-                      placeholder="Audience (e.g. SaaS founders)"
-                      className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 placeholder:text-amber-200/40 outline-none focus:border-amber-300/45"
-                    />
-                    <select
-                      value={writerFormat}
-                      onChange={(e) => setWriterFormat(e.target.value)}
-                      className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 outline-none focus:border-amber-300/45"
-                    >
-                      {WRITER_FORMAT_OPTIONS.map((option) => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={writerTone}
-                      onChange={(e) => setWriterTone(e.target.value)}
-                      className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 outline-none focus:border-amber-300/45"
-                    >
-                      {WRITER_TONE_OPTIONS.map((option) => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
-                    </select>
-                    <input
-                      value={writerTargetWords}
-                      onChange={(e) => setWriterTargetWords(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))}
-                      placeholder="Target words (e.g. 900)"
-                      className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 placeholder:text-amber-200/40 outline-none focus:border-amber-300/45"
-                    />
-                    <input
-                      value={writerKeyword}
-                      onChange={(e) => setWriterKeyword(e.target.value)}
-                      placeholder="Primary SEO keyword (optional)"
-                      className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 placeholder:text-amber-200/40 outline-none focus:border-amber-300/45"
-                    />
-                  </div>
-                  <div className="flex flex-wrap gap-2 mt-3">
-                    {WRITER_PROMPT_PRESETS.map((preset) => (
+                    <div className="flex items-center gap-2">
+                      <div className="text-[11px] text-amber-100/70">Prompt context is auto-injected into each request</div>
                       <button
-                        key={preset}
-                        onClick={() => setInput(preset)}
-                        className="px-3 py-1.5 rounded-lg bg-amber-300/10 border border-amber-300/25 text-[11px] text-amber-100 hover:bg-amber-300/15 transition-colors"
+                        onClick={() => setIsWriterStudioOpen((prev) => !prev)}
+                        className="px-2.5 py-1 rounded-lg border border-amber-300/25 bg-amber-300/10 text-[10px] uppercase tracking-[0.14em] text-amber-100 hover:bg-amber-300/15 transition-colors"
                       >
-                        {preset.length > 56 ? `${preset.slice(0, 56)}...` : preset}
+                        {isWriterStudioOpen ? "Hide Studio" : "Show Studio"}
                       </button>
-                    ))}
+                    </div>
                   </div>
+                  {isWriterStudioOpen ? (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input
+                          value={writerTitle}
+                          onChange={(e) => setWriterTitle(e.target.value)}
+                          placeholder="Article title (optional)"
+                          className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 placeholder:text-amber-200/40 outline-none focus:border-amber-300/45"
+                        />
+                        <input
+                          value={writerAudience}
+                          onChange={(e) => setWriterAudience(e.target.value)}
+                          placeholder="Audience (e.g. SaaS founders)"
+                          className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 placeholder:text-amber-200/40 outline-none focus:border-amber-300/45"
+                        />
+                        <select
+                          value={writerFormat}
+                          onChange={(e) => setWriterFormat(e.target.value)}
+                          className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 outline-none focus:border-amber-300/45"
+                        >
+                          {WRITER_FORMAT_OPTIONS.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={writerTone}
+                          onChange={(e) => setWriterTone(e.target.value)}
+                          className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 outline-none focus:border-amber-300/45"
+                        >
+                          {WRITER_TONE_OPTIONS.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                        <input
+                          value={writerTargetWords}
+                          onChange={(e) => setWriterTargetWords(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))}
+                          placeholder="Target words (e.g. 900)"
+                          className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 placeholder:text-amber-200/40 outline-none focus:border-amber-300/45"
+                        />
+                        <input
+                          value={writerKeyword}
+                          onChange={(e) => setWriterKeyword(e.target.value)}
+                          placeholder="Primary SEO keyword (optional)"
+                          className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 placeholder:text-amber-200/40 outline-none focus:border-amber-300/45"
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {WRITER_PROMPT_PRESETS.map((preset) => (
+                          <button
+                            key={preset}
+                            onClick={() => setInput(preset)}
+                            className="px-3 py-1.5 rounded-lg bg-amber-300/10 border border-amber-300/25 text-[11px] text-amber-100 hover:bg-amber-300/15 transition-colors"
+                          >
+                            {preset.length > 56 ? `${preset.slice(0, 56)}...` : preset}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-xs text-amber-100/70">
+                      Writer Studio is hidden. Click <span className="text-amber-200 font-medium">Show Studio</span> to edit format, tone, and SEO settings.
+                    </div>
+                  )}
                 </div>
               )}
 
