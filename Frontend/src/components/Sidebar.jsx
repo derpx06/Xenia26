@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { LayoutDashboard, Send, BarChart3, Settings, LogOut, User, Menu, X, Sparkles, ChevronRight } from "lucide-react";
+import { LayoutDashboard, Send, PenSquare, BarChart3, Settings, LogOut, User, Menu, X, Sparkles, ChevronRight } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -135,6 +135,7 @@ export default function Sidebar() {
         <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto custom-scrollbar">
           <NavItem icon={LayoutDashboard} label="Overview" to="/dashboard" isOpen={isOpen} onClick={() => window.innerWidth < 768 && setIsOpen(false)} />
           <NavItem icon={Send} label="Outreach" to="/outreach" isOpen={isOpen} onClick={() => window.innerWidth < 768 && setIsOpen(false)} />
+          <NavItem icon={PenSquare} label="Writer" to="/writer" isOpen={isOpen} onClick={() => window.innerWidth < 768 && setIsOpen(false)} />
           <NavItem icon={BarChart3} label="Analytics" to="/Analytics" isOpen={isOpen} onClick={() => window.innerWidth < 768 && setIsOpen(false)} />
           <NavItem icon={User} label="Profile" to="/profile" isOpen={isOpen} onClick={() => window.innerWidth < 768 && setIsOpen(false)} />
         </nav>

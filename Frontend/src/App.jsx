@@ -38,6 +38,7 @@ const App = () => {
 
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/outreach" element={<OutreachChat />} />
+          <Route path="/writer" element={<OutreachChat mode="writer" />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/Analytics" element={<Analytics />} />
           {/* <Route path="/contacts" element={<ContactBook />} /> */}

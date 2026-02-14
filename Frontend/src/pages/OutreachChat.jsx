@@ -76,7 +76,19 @@ const CarouselContainer = ({ children }) => {
 const API_BASE_URL = "http://127.0.0.1:8000";
 const BACKEND_API_URL = "http://localhost:8080/api";
 
-export default function OutreachChat() {
+export default function OutreachChat({ mode = "outreach" }) {
+  const isWriterMode = mode === "writer";
+  const chatHistoryKey = isWriterMode ? "writer-chat-history" : "outreach-chat-history";
+  const assistantTitle = isWriterMode ? "Verve Writer" : "Verve AI";
+  const assistantIntro = isWriterMode
+    ? "Hello! I am Verve Writer. I can help you draft emails, LinkedIn posts, DMs, and polished content. What should we write?"
+    : "Hello! I am Verve. I can help you draft emails, find contacts, or negotiate deals. How can I help you today?";
+  const introTagline = isWriterMode
+    ? "Your content copilot for high-quality writing across channels."
+    : "Your autonomous engine for drafting, negotiating, and closing deals.";
+  const inputPlaceholder = isWriterMode
+    ? "Describe the article you need: topic, angle, audience, and constraints"
+    : "Type your request here... Use @ to mention contacts";
   // --- UI STATE ---
   const [hasStarted, setHasStarted] = useState(false);
   const [agentStatus, setAgentStatus] = useState("Idle");
@@ -114,10 +126,18 @@ export default function OutreachChat() {
   const [selectedCustomVoiceId, setSelectedCustomVoiceId] = useState("");
   const [ttsAvailable, setTtsAvailable] = useState(false);
   const [ttsError, setTtsError] = useState("");
+  const [writerTitle, setWriterTitle] = useState("");
+  const [writerFormat, setWriterFormat] = useState("Thought Leadership");
+  const [writerTone, setWriterTone] = useState("Insightful");
+  const [writerTargetWords, setWriterTargetWords] = useState("900");
+  const [writerAudience, setWriterAudience] = useState("Founders and growth leaders");
+  const [writerKeyword, setWriterKeyword] = useState("");
+  const [isWriterStudioOpen, setIsWriterStudioOpen] = useState(true);
 
 
   // --- SESSION MANAGEMENT ---
 
+  // 1. Fetch Sessions List
   // 1. Fetch Sessions List
   useEffect(() => {
     const fetchSessions = async () => {
@@ -168,33 +188,33 @@ export default function OutreachChat() {
   useEffect(() => {
     const syncSession = async () => {
       if (!activeSessionId || messages.length === 0) return;
-
+      
       try {
-        // Determine dynamic title if it's "New Chat" and we have user messages
-        let newTitle = undefined;
-        const currentSession = chatSessions.find(s => s._id === activeSessionId);
-        if (currentSession && currentSession.title === "New Chat") {
-          const firstUserMsg = messages.find(m => m.role === 'user');
-          if (firstUserMsg) {
-            newTitle = firstUserMsg.content.slice(0, 30) + (firstUserMsg.content.length > 30 ? "..." : "");
-          }
-        }
+         // Determine dynamic title if it's "New Chat" and we have user messages
+         let newTitle = undefined;
+         const currentSession = chatSessions.find(s => s._id === activeSessionId);
+         if (currentSession && currentSession.title === "New Chat") {
+           const firstUserMsg = messages.find(m => m.role === 'user');
+           if (firstUserMsg) {
+             newTitle = firstUserMsg.content.slice(0, 30) + (firstUserMsg.content.length > 30 ? "..." : "");
+           }
+         }
 
-        await fetch(`${BACKEND_API_URL}/chat/sessions/${activeSessionId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            messages,
-            title: newTitle
-          })
-        });
+         await fetch(`${BACKEND_API_URL}/chat/sessions/${activeSessionId}`, {
+           method: "PUT",
+           headers: { "Content-Type": "application/json" },
+           body: JSON.stringify({ 
+             messages,
+             title: newTitle 
+           })
+         });
 
-        // Refresh list if title changed
-        if (newTitle) {
-          setChatSessions(prev => prev.map(s =>
-            s._id === activeSessionId ? { ...s, title: newTitle, lastUpdated: new Date().toISOString() } : s
-          ));
-        }
+         // Refresh list if title changed
+         if (newTitle) {
+            setChatSessions(prev => prev.map(s => 
+              s._id === activeSessionId ? { ...s, title: newTitle, lastUpdated: new Date().toISOString() } : s
+            ));
+         }
 
       } catch (err) {
         console.error("Failed to sync session:", err);
@@ -214,7 +234,7 @@ export default function OutreachChat() {
       const initialMsg = {
         role: "assistant",
         type: "text",
-        content: "Hello! I am Verve. I can help you draft emails, find contacts, or negotiate deals. How can I help you today?",
+        content: assistantIntro,
         id: Date.now().toString()
       };
 
@@ -250,9 +270,9 @@ export default function OutreachChat() {
         setChatSessions(newSessions);
         if (activeSessionId === sessionId) {
           setActiveSessionId(newSessions.length > 0 ? newSessions[0]._id : null);
-          if (newSessions.length === 0) {
-            handleCreateSession(); // Ensure always one chat
-          }
+           if (newSessions.length === 0) {
+             handleCreateSession(); // Ensure always one chat
+           }
         }
       }
     } catch (err) {
@@ -263,7 +283,7 @@ export default function OutreachChat() {
   const handleRenameSession = async (sessionId, newTitle) => {
     try {
       setChatSessions(prev => prev.map(s => s._id === sessionId ? { ...s, title: newTitle } : s));
-      await fetch(`${BACKEND_API_URL} /chat/sessions / ${sessionId} `, {
+      await fetch(`${BACKEND_API_URL}/chat/sessions/${sessionId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: newTitle })
@@ -659,7 +679,18 @@ export default function OutreachChat() {
 
   const sendMessage = async () => {
     if (!input.trim() && !selectedImage) return;
-    const originalInput = input;
+    const originalInput = input.trim();
+    const outboundPrompt = isWriterMode
+      ? buildWriterInstruction({
+        userPrompt: originalInput,
+        title: writerTitle,
+        format: writerFormat,
+        tone: writerTone,
+        targetWords: writerTargetWords,
+        audience: writerAudience,
+        keyword: writerKeyword,
+      })
+      : originalInput;
 
     // Filter mentions to ensure they are still in the input (simple check)
     const activeMentions = mentionedContacts.filter(c => originalInput.includes(c.name));
@@ -711,7 +742,7 @@ export default function OutreachChat() {
         },
         body: JSON.stringify({
           model: "qwen2.5:7b",
-          message: originalInput,
+          message: outboundPrompt,
           user_email: userEmail,
           sender_name: senderName,
           thread_id: assistantMsgId,
@@ -766,29 +797,31 @@ export default function OutreachChat() {
                   setStreamingContent("");
                   setAgentStatus("Complete");
 
-                  // Task 9 Support: Attempt JSON parse first
-                  let parsed = null;
-                  try {
-                    // Clean potential markdown blocks if LLM wraps JSON
-                    const cleanContent = msg.content.replace(/```json/g, "").replace(/```/g, "").trim();
-                    const json = JSON.parse(cleanContent);
-                    // Validate structure (must contain channel keys)
-                    if (json && (json.email || json.linkedin_dm || json.whatsapp || json.sms)) {
-                      parsed = json;
+                  if (!isWriterMode) {
+                    // Task 9 Support: Attempt JSON parse first
+                    let parsed = null;
+                    try {
+                      // Clean potential markdown blocks if LLM wraps JSON
+                      const cleanContent = msg.content.replace(/```json/g, "").replace(/```/g, "").trim();
+                      const json = JSON.parse(cleanContent);
+                      // Validate structure (must contain channel keys)
+                      if (json && (json.email || json.linkedin_dm || json.whatsapp || json.sms)) {
+                        parsed = json;
+                      }
+                    } catch (e) {
+                      // Fallback to markdown parsing
+                      parsed = parseMultiChannelMarkdown(msg.content);
                     }
-                  } catch (e) {
-                    // Fallback to markdown parsing
-                    parsed = parseMultiChannelMarkdown(msg.content);
-                  }
 
-                  if (parsed) {
-                    msg.generated_content = {
-                      email: parsed.email,
-                      whatsapp: parsed.whatsapp,
-                      sms: parsed.sms,
-                      linkedin: parsed.linkedin_dm || parsed.linkedin,
-                      instagram: parsed.instagram_dm || parsed.instagram
-                    };
+                    if (parsed) {
+                      msg.generated_content = {
+                        email: parsed.email,
+                        whatsapp: parsed.whatsapp,
+                        sms: parsed.sms,
+                        linkedin: parsed.linkedin_dm || parsed.linkedin,
+                        instagram: parsed.instagram_dm || parsed.instagram
+                      };
+                    }
                   }
                 }
 
@@ -873,8 +906,13 @@ export default function OutreachChat() {
     })
     .slice(0, 8);
 
+  const latestAssistantDraft =
+    [...messages].reverse().find((message) => message.role === "assistant" && message.content)?.content || "";
+  const latestDraftWordCount = countWords(latestAssistantDraft);
+  const latestDraftReadMinutes = Math.max(1, Math.ceil(latestDraftWordCount / 220));
+
   return (
-    <div className="flex h-screen bg-[#020202] text-white overflow-hidden font-sans selection:bg-purple-500/30">
+    <div className={`flex h-screen text-white overflow-hidden ${isWriterMode ? "font-serif selection:bg-amber-300/40" : "font-sans selection:bg-purple-500/30"} bg-[#020202]`}>
 
       {/* ANIMATION STYLES */}
       <style>{`
@@ -915,6 +953,29 @@ export default function OutreachChat() {
           background: linear-gradient(180deg, #22d3ee 0%, #3b82f6 100%);
           transform-origin: center bottom;
         }
+        .writer-bg {
+          background-image:
+            radial-gradient(circle at 8% 10%, rgba(251, 191, 36, 0.15) 0%, transparent 35%),
+            radial-gradient(circle at 88% 14%, rgba(217, 119, 6, 0.13) 0%, transparent 42%),
+            linear-gradient(180deg, #0f0b06 0%, #060505 55%, #040404 100%);
+        }
+        .writer-grid {
+          background-image:
+            linear-gradient(rgba(251, 191, 36, 0.06) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(251, 191, 36, 0.06) 1px, transparent 1px);
+          background-size: 28px 28px;
+          mask-image: radial-gradient(circle at center, black 45%, transparent 100%);
+          opacity: 0.25;
+        }
+        .article-sheet {
+          background: linear-gradient(180deg, rgba(26, 18, 10, 0.86), rgba(14, 10, 7, 0.92));
+          border: 1px solid rgba(251, 191, 36, 0.2);
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(251, 191, 36, 0.08) inset;
+        }
+        .writer-chip {
+          background: rgba(245, 158, 11, 0.14);
+          border: 1px solid rgba(245, 158, 11, 0.35);
+        }
       `}</style>
 
       <Sidebar />
@@ -943,51 +1004,105 @@ export default function OutreachChat() {
 
         {/* Toggle Button */}
         <button
-          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          className="absolute top-4 left-14 md:left-4 z-50 p-2 bg-[#1A1A1A]/80 backdrop-blur-md border border-white/10 rounded-lg text-white hover:bg-white/10 transition-colors shadow-lg pointer-events-auto"
-          title={isSidebarOpen ? "Close History" : "Open History"}
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="absolute top-4 left-14 md:left-4 z-50 p-2 bg-[#1A1A1A]/80 backdrop-blur-md border border-white/10 rounded-lg text-white hover:bg-white/10 transition-colors shadow-lg pointer-events-auto"
+            title={isSidebarOpen ? "Close History" : "Open History"}
         >
-          {isSidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            {isSidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         </button>
 
         {/* --- STATE 1: INTRO SCREEN --- */}
         {!hasStarted ? (
           <div className="flex-1 flex flex-col items-center justify-center p-6 relative z-10 animate-in fade-in duration-700">
 
-            {/* --- 3D ROBOT VISUAL (High Quality Orange Robot) --- */}
-            <div className="mb-8 relative w-full max-w-[300px] md:max-w-[450px] aspect-square flex items-center justify-center -mt-20">
-              {/* Glow behind robot */}
-              <div className="absolute inset-0 bg-orange-500/20 blur-[100px] rounded-full animate-pulse"></div>
-
-              {/* This image is a High-Quality 3D Render of an Orange/Yellow Robot */}
-              <img
-                src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExOTd4aXpqOG9qbXJrbzA4a3A4c2N4ZjJoYzh4aHpwa2xsMHQ1eXoxeiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/5k5vZwRFZR5aZeniqb/giphy.gif"
-                alt="3D AI Robot"
-                className="w-full h-full object-contain robot-3d-anim relative z-10"
-              />
-            </div>
-
-            <div className="text-center space-y-8 max-w-2xl relative z-20 -mt-24">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-orange-300 mb-2 backdrop-blur-md shadow-lg">
-                <Sparkles className="w-3 h-3 text-orange-400" /> NEXT-GEN AI AGENT
+            {!isWriterMode ? (
+              <>
+                {/* --- 3D ROBOT VISUAL (High Quality Orange Robot) --- */}
+                <div className="mb-8 relative w-full max-w-[300px] md:max-w-[450px] aspect-square flex items-center justify-center -mt-20">
+                  <div className="absolute inset-0 bg-orange-500/20 blur-[100px] rounded-full animate-pulse"></div>
+                  <img
+                    src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExOTd4aXpqOG9qbXJrbzA4a3A4c2N4ZjJoYzh4aHpwa2xsMHQ1eXoxeiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/5k5vZwRFZR5aZeniqb/giphy.gif"
+                    alt="3D AI Robot"
+                    className="w-full h-full object-contain robot-3d-anim relative z-10"
+                  />
+                </div>
+                <div className="text-center space-y-8 max-w-2xl relative z-20 -mt-24">
+                  <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-orange-300 mb-2 backdrop-blur-md shadow-lg">
+                    <Sparkles className="w-3 h-3 text-orange-400" /> NEXT-GEN AI AGENT
+                  </div>
+                  <h1 className="text-5xl md:text-7xl font-bold tracking-tighter bg-gradient-to-b from-white via-white to-neutral-500 bg-clip-text text-transparent drop-shadow-sm">
+                    Hello, Human.
+                  </h1>
+                  <p className="text-neutral-400 text-lg md:text-xl font-medium leading-relaxed max-w-lg mx-auto">
+                    I am <span className="text-white">{assistantTitle}</span>. {introTagline}
+                  </p>
+                  <button
+                    onClick={() => setHasStarted(true)}
+                    className="group relative inline-flex items-center gap-3 px-8 py-4 bg-white text-black rounded-full font-bold text-lg shadow-[0_0_50px_rgba(255,255,255,0.2)] hover:shadow-[0_0_80px_rgba(255,255,255,0.4)] transition-all transform hover:scale-105 active:scale-95"
+                  >
+                    Initialize System
+                    <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="w-full max-w-5xl relative z-20 grid lg:grid-cols-[1.1fr_0.9fr] gap-8 items-center">
+                <div className="space-y-6">
+                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full writer-chip text-[11px] tracking-widest uppercase text-amber-200">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Editorial Intelligence
+                  </div>
+                  <h1 className="text-4xl md:text-6xl text-amber-50 leading-tight">
+                    Write industry-grade articles with a focused AI writer.
+                  </h1>
+                  <p className="text-amber-100/70 text-lg leading-relaxed max-w-2xl">
+                    {assistantTitle} builds structured long-form articles with clear hooks, section flow, practical takeaways, and strong closing calls-to-action.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    {WRITER_PROMPT_PRESETS.slice(0, 2).map((preset) => (
+                      <button
+                        key={preset}
+                        onClick={() => {
+                          setInput(preset);
+                          setHasStarted(true);
+                        }}
+                        className="px-4 py-2.5 rounded-xl bg-amber-300/10 border border-amber-300/30 text-amber-100 text-sm hover:bg-amber-300/15 transition-colors"
+                      >
+                        {preset.length > 62 ? `${preset.slice(0, 62)}...` : preset}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setHasStarted(true)}
+                    className="group inline-flex items-center gap-2 px-7 py-3.5 rounded-xl bg-amber-200 text-[#2b1606] font-semibold shadow-[0_20px_60px_rgba(251,191,36,0.2)] hover:bg-amber-100 transition-colors"
+                  >
+                    Start Writing
+                    <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  </button>
+                </div>
+                <div className="article-sheet rounded-2xl p-6 md:p-7">
+                  <p className="text-[11px] tracking-[0.2em] uppercase text-amber-300/70 mb-4">Live Brief</p>
+                  <div className="space-y-4 text-sm">
+                    <div>
+                      <p className="text-amber-400/80 text-xs mb-1">Format</p>
+                      <p className="text-amber-50">{writerFormat}</p>
+                    </div>
+                    <div>
+                      <p className="text-amber-400/80 text-xs mb-1">Audience</p>
+                      <p className="text-amber-50">{writerAudience}</p>
+                    </div>
+                    <div>
+                      <p className="text-amber-400/80 text-xs mb-1">Tone + Length</p>
+                      <p className="text-amber-50">{writerTone} · {writerTargetWords} words</p>
+                    </div>
+                    <div>
+                      <p className="text-amber-400/80 text-xs mb-1">SEO Keyword</p>
+                      <p className="text-amber-50">{writerKeyword || "Not set yet"}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
-
-              <h1 className="text-5xl md:text-7xl font-bold tracking-tighter bg-gradient-to-b from-white via-white to-neutral-500 bg-clip-text text-transparent drop-shadow-sm">
-                Hello, Human.
-              </h1>
-
-              <p className="text-neutral-400 text-lg md:text-xl font-medium leading-relaxed max-w-lg mx-auto">
-                I am <span className="text-white">Verve</span>. Your autonomous engine for drafting, negotiating, and closing deals.
-              </p>
-
-              <button
-                onClick={() => setHasStarted(true)}
-                className="group relative inline-flex items-center gap-3 px-8 py-4 bg-white text-black rounded-full font-bold text-lg shadow-[0_0_50px_rgba(255,255,255,0.2)] hover:shadow-[0_0_80px_rgba(255,255,255,0.4)] transition-all transform hover:scale-105 active:scale-95"
-              >
-                Initialize System
-                <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-              </button>
-            </div>
+            )}
           </div>
         ) : (
 
@@ -998,16 +1113,21 @@ export default function OutreachChat() {
             <div className="absolute top-0 left-0 right-0 z-30 p-4 sm:p-6">
               <div className="glass-panel rounded-2xl px-4 pl-14 sm:pl-6 py-4 flex justify-between items-center shadow-lg">
                 <div className="flex items-center gap-4">
-                  {/* Small version of the 3D head */}
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500/20 to-yellow-500/20 flex items-center justify-center border border-white/10 overflow-hidden">
-                    <img
-                      src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExOTd4aXpqOG9qbXJrbzA4a3A4c2N4ZjJoYzh4aHpwa2xsMHQ1eXoxeiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/5k5vZwRFZR5aZeniqb/giphy.gif"
-                      className="w-12 h-12 object-cover translate-y-1"
-                      alt="Mini Robot"
-                    />
-                  </div>
+                  {!isWriterMode ? (
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500/20 to-yellow-500/20 flex items-center justify-center border border-white/10 overflow-hidden">
+                      <img
+                        src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExOTd4aXpqOG9qbXJrbzA4a3A4c2N4ZjJoYzh4aHpwa2xsMHQ1eXoxeiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/5k5vZwRFZR5aZeniqb/giphy.gif"
+                        className="w-12 h-12 object-cover translate-y-1"
+                        alt="Mini Robot"
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-10 h-10 rounded-xl bg-amber-300/15 border border-amber-300/35 flex items-center justify-center text-amber-200">
+                      <Sparkles className="w-5 h-5" />
+                    </div>
+                  )}
                   <div>
-                    <h1 className="text-lg font-bold text-white">Verve AI</h1>
+                    <h1 className="text-lg font-bold text-white">{assistantTitle}</h1>
                     <div className="flex items-center gap-1.5">
                       <span className="relative flex h-1.5 w-1.5">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -1018,9 +1138,9 @@ export default function OutreachChat() {
                   </div>
                 </div>
                 {/* Agent Live Status Chip */}
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 border border-white/10 text-xs text-zinc-300">
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs ${isWriterMode ? "writer-chip text-amber-100" : "bg-black/40 border border-white/10 text-zinc-300"}`}>
                   <span className={`w-2 h-2 rounded-full ${isStreaming ? "bg-orange-400 animate-pulse" : "bg-emerald-400"}`} />
-                  <span className="font-semibold">Agent Live</span>
+                  <span className="font-semibold">{isWriterMode ? "Writer Live" : "Agent Live"}</span>
                   <span className="text-zinc-400">·</span>
                   <span className="max-w-[200px] truncate">{agentStatus}</span>
                 </div>
@@ -1036,370 +1156,493 @@ export default function OutreachChat() {
               {messages.map((msg, i) => (
                 <div key={i} className={`flex w-full ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                   <div className={`flex flex-col max-w-2xl ${msg.role === "user" ? "items-end" : "items-start"} w-full`}>
+                    {/*
+                        Show drafting loaders only while the current assistant response is actively streaming.
+                        This prevents stale WRITER state from keeping the loader visible after output is ready.
+                      */}
+                    {(() => {
+                      const isCurrentAssistantStream =
+                        isStreaming && msg.role === "assistant" && i === messages.length - 1;
+                      const shouldShowDraftingLoader =
+                        isCurrentAssistantStream &&
+                        msg.active_node === "WRITER" &&
+                        !hasStructuredChannelContent(msg);
+                      const shouldShowProcessDraftState = shouldShowDraftingLoader && !activeSendFlow;
+                      return (
+                        <>
 
-                    {/* PROCESS BOX (Agent Journey) */}
-                    {msg.role === 'assistant' && (
-                      ((isStreaming && i === messages.length - 1) ||
-                        (msg.tool_calls?.length > 0 || msg.tool_results?.length > 0 || msg.thoughts?.length > 0 || msg.active_node)) && (
-                        <div className="mb-4 w-full max-w-2xl flex flex-col gap-0 bg-[#0F0F0F] border border-white/5 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 backdrop-blur-md">
+                          {/* PROCESS BOX (Agent Journey) */}
+                          {msg.role === 'assistant' && (
+                            ((isStreaming && i === messages.length - 1) ||
+                              (msg.tool_calls?.length > 0 || msg.tool_results?.length > 0 || msg.thoughts?.length > 0 || msg.active_node)) && (
+                              <div className={`mb-4 w-full ${isWriterMode ? "max-w-4xl" : "max-w-2xl"} flex flex-col gap-0 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 backdrop-blur-md ${isWriterMode ? "bg-[#120d08]/90 border border-amber-300/15" : "bg-[#0F0F0F] border border-white/5"}`}>
 
-                          {/* 1. HEADER & PROGRESS STEPS */}
-                          <div className="p-4 border-b border-white/5 bg-[#141414]">
-                            <div className="flex items-center gap-2 mb-4">
-                              <div className="relative flex h-2 w-2">
-                                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isStreaming ? 'bg-orange-400' : 'bg-green-400'}`}></span>
-                                <span className={`relative inline-flex rounded-full h-2 w-2 ${isStreaming ? 'bg-orange-500' : 'bg-green-500'}`}></span>
-                              </div>
-                              <span className="text-xs font-bold uppercase tracking-widest text-zinc-400">
-                                {isStreaming ? "Agent Active" : "Process Complete"}
-                              </span>
-                            </div>
-
-                            {/* Stepper */}
-                            <div className="flex justify-between items-center px-1">
-                              {['ROUTER', 'PROFILER', 'RETRIEVER', 'WRITER', 'CRITIC'].map((step, idx) => {
-                                // Check if this step is active or done based on thoughts or state
-                                const isCurrentMsg = i === messages.length - 1;
-                                const isStepActive = msg.active_node === step ||
-                                  (idx === 0 && isStreaming && isCurrentMsg && !msg.active_node) ||
-                                  msg.thoughts?.some(t => t.toUpperCase().includes(`[${step}]`));
-                                return (
-                                  <div key={step} className="flex flex-col items-center gap-2 relative z-10 group">
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all duration-500 ${isStepActive
-                                      ? "bg-purple-600 border-purple-400 text-white shadow-[0_0_15px_rgba(147,51,234,0.5)]"
-                                      : "bg-zinc-900 border-zinc-800 text-zinc-600"
-                                      }`}>
-                                      {idx === 0 && <span className="text-[10px] font-bold">R</span>}
-                                      {idx === 1 && <span className="text-[10px] font-bold">P</span>}
-                                      {idx === 2 && <span className="text-[10px] font-bold">M</span>}
-                                      {idx === 3 && <span className="text-[10px] font-bold">W</span>}
-                                      {idx === 4 && <span className="text-[10px] font-bold">C</span>}
+                                {/* 1. HEADER & PROGRESS STEPS */}
+                                <div className="p-4 border-b border-white/5 bg-[#141414]">
+                                  <div className="flex items-center gap-2 mb-4">
+                                    <div className="relative flex h-2 w-2">
+                                      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isStreaming ? 'bg-orange-400' : 'bg-green-400'}`}></span>
+                                      <span className={`relative inline-flex rounded-full h-2 w-2 ${isStreaming ? 'bg-orange-500' : 'bg-green-500'}`}></span>
                                     </div>
-                                    <span className={`text-[10px] font-bold tracking-wider transition-colors duration-300 ${isStepActive ? "text-purple-300" : "text-zinc-700"}`}>
-                                      {step}
+                                    <span className="text-xs font-bold uppercase tracking-widest text-zinc-400">
+                                      {isStreaming ? "Agent Active" : "Process Complete"}
                                     </span>
                                   </div>
-                                );
-                              })}
-                              {/* Connector Line (Background) */}
-                              <div className="absolute left-6 right-6 top-[70px] h-0.5 bg-zinc-800 -z-0 hidden md:block" />
-                            </div>
-                          </div>
 
-                          {/* 2. LIVE TERMINAL LOGS */}
-                          <div className="p-3 bg-black/50 font-mono text-[11px] h-48 overflow-y-auto custom-scrollbar flex flex-col-reverse">
-                            {/* Reverse parsing to show latest at bottom if we used flex-col, but flex-col-reverse keeps bottom anchored */}
-                            <div className="flex flex-col gap-1">
-                              {(msg.thoughts || []).map((thought, tIdx) => {
-                                // Extract Node Name if present
-                                const match = thought.match(/^\[(\w+)\]\s*(.*)/);
-                                const node = match ? match[1] : null;
-                                const content = match ? match[2] : thought;
-
-                                let colorClass = "text-zinc-500";
-                                if (node === 'ROUTER') colorClass = "text-blue-400";
-                                if (node === 'PROFILER') colorClass = "text-pink-400";
-                                if (node === 'RETRIEVER') colorClass = "text-yellow-400";
-                                if (node === 'WRITER') colorClass = "text-purple-400";
-                                if (node === 'CRITIC') colorClass = "text-red-400";
-                                if (node === 'STYLE_INFERRER') colorClass = "text-cyan-400";
-                                if (node === 'GENERATOR') colorClass = "text-emerald-400 italic";
-                                if (node === 'SYSTEM') colorClass = "text-zinc-500 italic";
-                                if (node === 'SARGE') colorClass = "text-orange-400 font-bold";
-
-                                return (
-                                  <div key={tIdx} className="break-words leading-relaxed border-l-2 border-white/5 pl-2 hover:bg-white/5 transition-colors p-1 rounded-r-md">
-                                    {node && (
-                                      <span className={`${colorClass} font-bold mr-2 opacity-80`}>
-                                        {node}:
-                                      </span>
-                                    )}
-                                    <span className="text-zinc-300 opacity-90">{content}</span>
+                                  {/* Stepper */}
+                                  <div className="flex justify-between items-center px-1">
+                                    {['ROUTER', 'PROFILER', 'RETRIEVER', 'WRITER', 'CRITIC'].map((step, idx) => {
+                                      // Check if this step is active or done based on thoughts or state
+                                      const isCurrentMsg = i === messages.length - 1;
+                                      const isStepActive = msg.active_node === step ||
+                                        (idx === 0 && isStreaming && isCurrentMsg && !msg.active_node) ||
+                                        msg.thoughts?.some(t => t.toUpperCase().includes(`[${step}]`));
+                                      return (
+                                        <div key={step} className="flex flex-col items-center gap-2 relative z-10 group">
+                                          <div className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all duration-500 ${isStepActive
+                                            ? "bg-purple-600 border-purple-400 text-white shadow-[0_0_15px_rgba(147,51,234,0.5)]"
+                                            : "bg-zinc-900 border-zinc-800 text-zinc-600"
+                                            }`}>
+                                            {idx === 0 && <span className="text-[10px] font-bold">R</span>}
+                                            {idx === 1 && <span className="text-[10px] font-bold">P</span>}
+                                            {idx === 2 && <span className="text-[10px] font-bold">M</span>}
+                                            {idx === 3 && <span className="text-[10px] font-bold">W</span>}
+                                            {idx === 4 && <span className="text-[10px] font-bold">C</span>}
+                                          </div>
+                                          <span className={`text-[10px] font-bold tracking-wider transition-colors duration-300 ${isStepActive ? "text-purple-300" : "text-zinc-700"}`}>
+                                            {step}
+                                          </span>
+                                        </div>
+                                      );
+                                    })}
+                                    {/* Connector Line (Background) */}
+                                    <div className="absolute left-6 right-6 top-[70px] h-0.5 bg-zinc-800 -z-0 hidden md:block" />
                                   </div>
-                                );
-                              })}
-
-                              {/* Tools */}
-                              {msg.tool_calls?.map((tc, tcIdx) => (
-                                <div key={`tc-${tcIdx}`} className="text-cyan-400 pl-2 border-l-2 border-cyan-500/30 py-1">
-                                  <span className="opacity-50 mr-2">TOOL:</span>
-                                  {tc.name}({JSON.stringify(tc.args).slice(0, 50)}...)
                                 </div>
-                              ))}
 
-                              {/* Results */}
-                              {msg.tool_results?.map((tr, trIdx) => (
-                                <div key={`tr-${trIdx}`} className="text-emerald-400 pl-2 border-l-2 border-emerald-500/30 py-1">
-                                  <span className="opacity-50 mr-2">RESULT:</span>
-                                  Done.
+                                {/* 2. LIVE TERMINAL LOGS */}
+                                <div className="p-3 bg-black/50 font-mono text-[11px] h-48 overflow-y-auto custom-scrollbar flex flex-col-reverse">
+                                  {/* Reverse parsing to show latest at bottom if we used flex-col, but flex-col-reverse keeps bottom anchored */}
+                                  <div className="flex flex-col gap-1">
+                                    {(msg.thoughts || []).map((thought, tIdx) => {
+                                      // Extract Node Name if present
+                                      const match = thought.match(/^\[(\w+)\]\s*(.*)/);
+                                      const node = match ? match[1] : null;
+                                      const content = match ? match[2] : thought;
+
+                                      let colorClass = "text-zinc-500";
+                                      if (node === 'ROUTER') colorClass = "text-blue-400";
+                                      if (node === 'PROFILER') colorClass = "text-pink-400";
+                                      if (node === 'RETRIEVER') colorClass = "text-yellow-400";
+                                      if (node === 'WRITER') colorClass = "text-purple-400";
+                                      if (node === 'CRITIC') colorClass = "text-red-400";
+                                      if (node === 'STYLE_INFERRER') colorClass = "text-cyan-400";
+                                      if (node === 'GENERATOR') colorClass = "text-emerald-400 italic";
+                                      if (node === 'SYSTEM') colorClass = "text-zinc-500 italic";
+                                      if (node === 'SARGE') colorClass = "text-orange-400 font-bold";
+
+                                      return (
+                                        <div key={tIdx} className="break-words leading-relaxed border-l-2 border-white/5 pl-2 hover:bg-white/5 transition-colors p-1 rounded-r-md">
+                                          {node && (
+                                            <span className={`${colorClass} font-bold mr-2 opacity-80`}>
+                                              {node}:
+                                            </span>
+                                          )}
+                                          <span className="text-zinc-300 opacity-90">{content}</span>
+                                        </div>
+                                      );
+                                    })}
+
+                                    {/* Tools */}
+                                    {msg.tool_calls?.map((tc, tcIdx) => (
+                                      <div key={`tc-${tcIdx}`} className="text-cyan-400 pl-2 border-l-2 border-cyan-500/30 py-1">
+                                        <span className="opacity-50 mr-2">TOOL:</span>
+                                        {tc.name}({JSON.stringify(tc.args).slice(0, 50)}...)
+                                      </div>
+                                    ))}
+
+                                    {/* Results */}
+                                    {msg.tool_results?.map((tr, trIdx) => (
+                                      <div key={`tr-${trIdx}`} className="text-emerald-400 pl-2 border-l-2 border-emerald-500/30 py-1">
+                                        <span className="opacity-50 mr-2">RESULT:</span>
+                                        Done.
+                                      </div>
+                                    ))}
+
+                                    {/* Connection State */}
+                                    {msg.thoughts?.length === 0 && isStreaming && i === messages.length - 1 && (
+                                      <div className="text-zinc-500 animate-pulse flex items-center gap-2">
+                                        <span className="w-1 h-1 bg-zinc-500 rounded-full"></span>
+                                        Streaming from SARGE engine...
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
-                              ))}
-
-                              {/* Connection State */}
-                              {msg.thoughts?.length === 0 && isStreaming && i === messages.length - 1 && (
-                                <div className="text-zinc-500 animate-pulse flex items-center gap-2">
-                                  <span className="w-1 h-1 bg-zinc-500 rounded-full"></span>
-                                  Streaming from SARGE engine...
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    )}
-
-                    {/* MESSAGE BUBBLE */}
-                    {(!hasStructuredChannelContent(msg) || msg.role === "user") && (
-                      <div className={`px-4 sm:px-6 py-4 rounded-2xl text-sm shadow-xl backdrop-blur-md border ${msg.role === "user"
-                        ? "bg-purple-600/20 border-purple-500/30 text-white rounded-tr-sm"
-                        : "bg-[#111]/80 border-white/10 text-neutral-200 rounded-tl-sm w-full"
-                        }`}>
-                        {msg.image && (
-                          <div className="mb-3">
-                            <img
-                              src={msg.image}
-                              alt="Attachment"
-                              className="max-h-60 w-auto rounded-lg border border-white/10 shadow-lg object-contain bg-black/50"
-                            />
-                          </div>
-                        )}
-                        {msg.content ? (
-                          <MarkdownRenderer>{msg.content}</MarkdownRenderer>
-                        ) : (
-                          <span className="animate-pulse text-zinc-500">Thinking...</span>
-                        )}
-                      </div>
-                    )}
-
-                    {msg.role === "assistant" && hasStructuredChannelContent(msg) && (
-                      <CarouselContainer>
-                        {msg.generated_content?.email && (
-                          <EmailPreviewCard
-                            content={msg.generated_content.email}
-                            previewMode={true}
-                            onProceed={() => handleProceedToInput(i, msg.generated_content.email, "email")}
-                            onCancel={() => { }}
-                            audioPath={msg.generated_content?.audio_path}
-                            onConvertAudio={() => handleGenerateAudio(msg.generated_content.email, msg.id)}
-                            isAudioLoading={loadingAction}
-                            attachments={messages[i - 1]?.image ? [messages[i - 1].image] : []}
-                          />
-                        )}
-                        {msg.generated_content?.whatsapp && (
-                          <WhatsAppPreviewCard
-                            content={msg.generated_content.whatsapp}
-                            previewMode={true}
-                            onProceed={() => handleProceedToInput(i, msg.generated_content.whatsapp, "whatsapp")}
-                            onCancel={() => { }}
-                            attachments={messages[i - 1]?.image ? [messages[i - 1].image] : []}
-                          />
-                        )}
-                        {(msg.generated_content?.linkedin || msg.generated_content?.linkedin_dm) && (
-                          <LinkedInPreviewCard
-                            content={msg.generated_content?.linkedin || msg.generated_content?.linkedin_dm}
-                            previewMode={true}
-                            onProceed={() => handleProceedToInput(i, msg.generated_content?.linkedin || msg.generated_content?.linkedin_dm, "linkedin")}
-                            onCancel={() => { }}
-                            attachments={messages[i - 1]?.image ? [messages[i - 1].image] : []}
-                          />
-                        )}
-
-                      </CarouselContainer>
-                    )}
-
-                    {/* ACTIONS */}
-                    {msg.role === 'assistant' && (
-                      <div className="mt-3 w-full pl-1">
-                        {/* TTS CONTROLS & PLAYER */}
-                        <div className="mb-2">
-                          {/* Audio Player (if exists) */}
-                          {msg.generated_content?.audio_path && (
-                            <MessageAudioPlayer
-                              src={msg.generated_content.audio_path.startsWith("http")
-                                ? msg.generated_content.audio_path
-                                : `http://localhost:8000${msg.generated_content.audio_path}`}
-                              msgId={msg.id || i}
-                              activeId={playingAudioMsgId}
-                              onPlay={(id) => setPlayingAudioMsgId(id)}
-                              voiceName="Voice Message"
-                              voiceType={voiceMode === 'custom' ? 'Custom Voice' : voiceMode === 'default' ? 'Model Voice' : 'Auto Voice'}
-                            />
+                              </div>
+                            )
                           )}
 
-                          {/* Voice Settings Toggle */}
-                          <details className="group/settings">
-                            <summary className="list-none cursor-pointer flex items-center gap-2 text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors bg-black/20 w-fit px-2 py-1 rounded-lg">
-                              <Settings2 className="w-3 h-3" />
-                              <span>Configure Voice</span>
-                              <ChevronRight className="w-3 h-3 transition-transform group-open/settings:rotate-90" />
-                            </summary>
+                          {/* MESSAGE BUBBLE */}
+                          {(!hasStructuredChannelContent(msg) || msg.role === "user") && (
+                            <div className={`px-4 sm:px-6 py-4 rounded-2xl text-sm shadow-xl backdrop-blur-md border ${msg.role === "user"
+                              ? isWriterMode
+                                ? "bg-amber-300/15 border-amber-300/35 text-amber-50 rounded-tr-sm"
+                                : "bg-purple-600/20 border-purple-500/30 text-white rounded-tr-sm"
+                              : isWriterMode
+                                ? "article-sheet text-amber-50 rounded-tl-sm w-full"
+                                : "bg-[#111]/80 border-white/10 text-neutral-200 rounded-tl-sm w-full"
+                              }`}>
+                              {msg.image && (
+                                <div className="mb-3">
+                                  <img
+                                    src={msg.image}
+                                    alt="Attachment"
+                                    className="max-h-60 w-auto rounded-lg border border-white/10 shadow-lg object-contain bg-black/50"
+                                  />
+                                </div>
+                              )}
+                              {shouldShowDraftingLoader ? (
+                                <div className="flex items-center gap-3 py-2 text-zinc-400 animate-pulse">
+                                  <Loader2 className="w-5 h-5 animate-spin text-purple-500" />
+                                  <span className="font-medium">Drafting personalized content...</span>
+                                </div>
+                              ) : msg.content ? (
+                                <MarkdownRenderer>{msg.content}</MarkdownRenderer>
+                              ) : (
+                                <span className="animate-pulse text-zinc-500">Thinking...</span>
+                              )}
+                            </div>
+                          )}
 
-                            <div className="mt-2 p-3 rounded-xl border border-white/5 bg-[#0f0f0f] flex flex-col gap-2 animate-in slide-in-from-top-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <select
-                                  value={voiceMode}
-                                  onChange={(e) => setVoiceMode(e.target.value)}
-                                  disabled={!ttsAvailable}
-                                  className="flex-1 min-w-[120px] bg-black border border-white/10 rounded-lg px-2 py-1.5 text-xs text-zinc-300 focus:ring-1 focus:ring-purple-500 outline-none disabled:opacity-50"
-                                >
-                                  <option value="auto">Auto (Default)</option>
-                                  <option value="default">Model Default</option>
-                                  <option value="custom">Custom Voice</option>
-                                </select>
+                          {msg.role === "assistant" && hasStructuredChannelContent(msg) && (
+                            <CarouselContainer>
+                              {msg.generated_content?.email && (
+                                <EmailPreviewCard
+                                  content={msg.generated_content.email}
+                                  previewMode={true}
+                                  onProceed={() => handleProceedToInput(i, msg.generated_content.email, "email")}
+                                  onCancel={() => { }}
+                                  audioPath={msg.generated_content?.audio_path}
+                                  onConvertAudio={() => handleGenerateAudio(msg.generated_content.email, msg.id)}
+                                  isAudioLoading={loadingAction}
+                                  attachments={messages[i - 1]?.image ? [messages[i - 1].image] : []}
+                                />
+                              )}
+                              {msg.generated_content?.whatsapp && (
+                                <WhatsAppPreviewCard
+                                  content={msg.generated_content.whatsapp}
+                                  previewMode={true}
+                                  onProceed={() => handleProceedToInput(i, msg.generated_content.whatsapp, "whatsapp")}
+                                  onCancel={() => { }}
+                                  attachments={messages[i - 1]?.image ? [messages[i - 1].image] : []}
+                                />
+                              )}
+                              {(msg.generated_content?.linkedin || msg.generated_content?.linkedin_dm) && (
+                                <LinkedInPreviewCard
+                                  content={msg.generated_content?.linkedin || msg.generated_content?.linkedin_dm}
+                                  previewMode={true}
+                                  onProceed={() => handleProceedToInput(i, msg.generated_content?.linkedin || msg.generated_content?.linkedin_dm, "linkedin")}
+                                  onCancel={() => { }}
+                                  attachments={messages[i - 1]?.image ? [messages[i - 1].image] : []}
+                                />
+                              )}
 
-                                <select
-                                  value={selectedCustomVoiceId}
-                                  onChange={(e) => setSelectedCustomVoiceId(e.target.value)}
-                                  disabled={voiceMode === "default" || !ttsAvailable}
-                                  className={`flex-1 min-w-[120px] bg-black border border-white/10 rounded-lg px-2 py-1.5 text-xs text-zinc-300 focus:ring-1 focus:ring-purple-500 outline-none disabled:opacity-50 ${voiceMode === "default" ? "hidden" : "block"}`}
-                                >
-                                  <option value="">Select Custom Voice</option>
-                                  {customVoices.map((voice) => (
-                                    <option key={voice.id} value={voice.id}>
-                                      {voice.name} ({voice.personality || "Professional"})
-                                    </option>
-                                  ))}
-                                </select>
+                            </CarouselContainer>
+                          )}
 
-                                <select
-                                  value={selectedDefaultVoice}
-                                  onChange={(e) => setSelectedDefaultVoice(e.target.value)}
-                                  disabled={voiceMode === "custom" || !ttsAvailable}
-                                  className={`flex-1 min-w-[120px] bg-black border border-white/10 rounded-lg px-2 py-1.5 text-xs text-zinc-300 focus:ring-1 focus:ring-purple-500 outline-none disabled:opacity-50 ${voiceMode === "custom" ? "hidden" : "block"}`}
-                                >
-                                  {defaultVoices.length === 0 ? (
-                                    <option value="">No Model Voices</option>
-                                  ) : (
-                                    defaultVoices.map((voice) => (
-                                      <option key={voice.id} value={voice.id}>
-                                        {voice.name}
-                                      </option>
-                                    ))
-                                  )}
-                                </select>
+                          {/* ACTIONS */}
+                          {msg.role === 'assistant' && (
+                            <div className="mt-3 w-full pl-1">
+                              {/* TTS CONTROLS & PLAYER */}
+                              <div className="mb-2">
+                                {/* Audio Player (if exists) */}
+                                {msg.generated_content?.audio_path && (
+                                  <MessageAudioPlayer
+                                    src={msg.generated_content.audio_path.startsWith("http")
+                                      ? msg.generated_content.audio_path
+                                      : `http://localhost:8000${msg.generated_content.audio_path}`}
+                                    msgId={msg.id || i}
+                                    activeId={playingAudioMsgId}
+                                    onPlay={(id) => setPlayingAudioMsgId(id)}
+                                    voiceName="Voice Message"
+                                    voiceType={voiceMode === 'custom' ? 'Custom Voice' : voiceMode === 'default' ? 'Model Voice' : 'Auto Voice'}
+                                  />
+                                )}
+
+                                {/* Voice Settings Toggle */}
+                                <details className="group/settings">
+                                  <summary className="list-none cursor-pointer flex items-center gap-2 text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors bg-black/20 w-fit px-2 py-1 rounded-lg">
+                                    <Settings2 className="w-3 h-3" />
+                                    <span>Configure Voice</span>
+                                    <ChevronRight className="w-3 h-3 transition-transform group-open/settings:rotate-90" />
+                                  </summary>
+
+                                  <div className="mt-2 p-3 rounded-xl border border-white/5 bg-[#0f0f0f] flex flex-col gap-2 animate-in slide-in-from-top-2">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <select
+                                        value={voiceMode}
+                                        onChange={(e) => setVoiceMode(e.target.value)}
+                                        disabled={!ttsAvailable}
+                                        className="flex-1 min-w-[120px] bg-black border border-white/10 rounded-lg px-2 py-1.5 text-xs text-zinc-300 focus:ring-1 focus:ring-purple-500 outline-none disabled:opacity-50"
+                                      >
+                                        <option value="auto">Auto (Default)</option>
+                                        <option value="default">Model Default</option>
+                                        <option value="custom">Custom Voice</option>
+                                      </select>
+
+                                      <select
+                                        value={selectedCustomVoiceId}
+                                        onChange={(e) => setSelectedCustomVoiceId(e.target.value)}
+                                        disabled={voiceMode === "default" || !ttsAvailable}
+                                        className={`flex-1 min-w-[120px] bg-black border border-white/10 rounded-lg px-2 py-1.5 text-xs text-zinc-300 focus:ring-1 focus:ring-purple-500 outline-none disabled:opacity-50 ${voiceMode === "default" ? "hidden" : "block"}`}
+                                      >
+                                        <option value="">Select Custom Voice</option>
+                                        {customVoices.map((voice) => (
+                                          <option key={voice.id} value={voice.id}>
+                                            {voice.name} ({voice.personality || "Professional"})
+                                          </option>
+                                        ))}
+                                      </select>
+
+                                      <select
+                                        value={selectedDefaultVoice}
+                                        onChange={(e) => setSelectedDefaultVoice(e.target.value)}
+                                        disabled={voiceMode === "custom" || !ttsAvailable}
+                                        className={`flex-1 min-w-[120px] bg-black border border-white/10 rounded-lg px-2 py-1.5 text-xs text-zinc-300 focus:ring-1 focus:ring-purple-500 outline-none disabled:opacity-50 ${voiceMode === "custom" ? "hidden" : "block"}`}
+                                      >
+                                        {defaultVoices.length === 0 ? (
+                                          <option value="">No Model Voices</option>
+                                        ) : (
+                                          defaultVoices.map((voice) => (
+                                            <option key={voice.id} value={voice.id}>
+                                              {voice.name}
+                                            </option>
+                                          ))
+                                        )}
+                                      </select>
+                                    </div>
+
+                                    {!ttsAvailable && (
+                                      <div className="text-[10px] text-red-400/80 px-1 border-l-2 border-red-500/30 pl-2">
+                                        {ttsError || "Text-to-Speech service unavailable"}
+                                      </div>
+                                    )}
+                                  </div>
+                                </details>
                               </div>
 
-                              {!ttsAvailable && (
-                                <div className="text-[10px] text-red-400/80 px-1 border-l-2 border-red-500/30 pl-2">
-                                  {ttsError || "Text-to-Speech service unavailable"}
+                              {(activeSendFlow?.msgIndex === i || msg.active_node === 'WRITER') ? (
+                                <div className="w-full mt-4 animate-in slide-in-from-bottom-2 duration-300">
+
+                                  {/* DRAFTING STATE */}
+                                  {msg.active_node === 'WRITER' && !activeSendFlow ? (
+                                    <div className="flex flex-col gap-4 w-full animate-pulse">
+                                      <div className="p-6 rounded-2xl bg-white/5 border border-white/10 border-dashed flex items-center gap-4 text-zinc-500">
+                                        <div className="w-10 h-10 rounded-xl bg-zinc-800 animate-spin flex items-center justify-center">⏳</div>
+                                        <div>
+                                          <p className="text-sm font-bold">{isWriterMode ? "Drafting polished content..." : "Drafting personalized outreach..."}</p>
+                                          <p className="text-xs">{isWriterMode ? "Optimizing structure, tone, and clarity" : "Personalizing for prospect profile"}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : null}
+
+                                  {/* MANUAL SEND FLOW (Fallback or Override) */}
+                                  {activeSendFlow?.msgIndex === i && activeSendFlow.step === 'preview' && (
+                                    <div className="w-full mt-4 animate-in slide-in-from-bottom-2 duration-300">
+                                      {activeSendFlow.type === 'email' && (
+                                        <EmailPreviewCard
+                                          content={activeSendFlow.content}
+                                          previewMode={true}
+                                          onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
+                                          onCancel={() => setActiveSendFlow(null)}
+                                          // Audio props can be added here if manual flow supports audio generation
+                                          onConvertAudio={() => handleGenerateAudio(activeSendFlow.content)}
+                                          isAudioLoading={loadingAction}
+                                        />
+                                      )}
+                                      {activeSendFlow.type === 'linkedin' && (
+                                        <LinkedInPreviewCard
+                                          content={activeSendFlow.content}
+                                          previewMode={true}
+                                          onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
+                                          onCancel={() => setActiveSendFlow(null)}
+                                          onConvertAudio={() => handleGenerateAudio(activeSendFlow.content)}
+                                          isAudioLoading={loadingAction}
+                                        />
+                                      )}
+                                      {activeSendFlow.type === 'whatsapp' && (
+                                        <WhatsAppPreviewCard
+                                          content={activeSendFlow.content}
+                                          previewMode={true}
+                                          onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
+                                          onCancel={() => setActiveSendFlow(null)}
+                                          onConvertAudio={() => handleGenerateAudio(activeSendFlow.content)}
+                                          isAudioLoading={loadingAction}
+                                        />
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {activeSendFlow?.msgIndex === i && activeSendFlow.step === 'input' && (
+                                    <div className="p-4 border border-purple-500/30 bg-purple-900/10 rounded-xl mt-2">
+                                      <ContactInputStep
+                                        activeSendFlow={activeSendFlow}
+                                        setActiveSendFlow={setActiveSendFlow}
+                                        executeSend={(val) => executeSend(val, activeSendFlow.content, activeSendFlow.content)}
+                                        loadingAction={loadingAction}
+                                        onCancel={() => setActiveSendFlow(null)}
+                                      />
+                                    </div>
+                                  )}
+
+                                </div>
+                              ) : !hasStructuredChannelContent(msg) ? (
+                                <div className="flex flex-wrap gap-2">
+                                  {!isWriterMode ? (
+                                    <>
+                                      <button
+                                        onClick={() => handleSendAction(i, msg.generated_content?.email || msg.streaming_generated_content?.email || msg.content, 'email')}
+                                        className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-purple-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2"
+                                      >
+                                        <Mail className="w-3 h-3" /> Email
+                                      </button>
+                                      <button
+                                        onClick={() => handleSendAction(i, msg.generated_content?.whatsapp || msg.streaming_generated_content?.whatsapp || msg.content, 'whatsapp')}
+                                        className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-green-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2"
+                                      >
+                                        <Phone className="w-3 h-3" /> WhatsApp
+                                      </button>
+                                      <button
+                                        onClick={() => handleSendAction(i, msg.generated_content?.linkedin || msg.streaming_generated_content?.linkedin || msg.content, 'linkedin')}
+                                        className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-700/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2"
+                                      >
+                                        <span className="font-bold text-[10px] bg-blue-600 text-white px-1 rounded">in</span> LinkedIn
+                                      </button>
+                                      <button
+                                        onClick={() => handleGenerateAudio(msg.content, msg.id)}
+                                        disabled={!ttsAvailable || loadingAction}
+                                        title={!ttsAvailable ? (ttsError || "TTS unavailable on backend") : ""}
+                                        className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                      >
+                                        <Volume2 className="w-3 h-3" /> Audio
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button
+                                        onClick={() => handleGenerateAudio(msg.content, msg.id)}
+                                        disabled={!ttsAvailable || loadingAction}
+                                        title={!ttsAvailable ? (ttsError || "TTS unavailable on backend") : ""}
+                                        className="px-3 py-1.5 bg-amber-300/10 border border-amber-300/30 hover:bg-amber-300/15 rounded-lg text-xs font-medium text-amber-100 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                      >
+                                        <Volume2 className="w-3 h-3" /> Narrate Draft
+                                      </button>
+                                      <button
+                                        onClick={() => setInput(`Improve this article draft by strengthening clarity and examples:\n\n${msg.content || ""}`)}
+                                        className="px-3 py-1.5 bg-[#1A1A1A] border border-amber-300/20 hover:border-amber-300/40 rounded-lg text-xs font-medium text-amber-100/85 hover:text-amber-50 transition-all"
+                                      >
+                                        Refine This Draft
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="text-[11px] text-zinc-500 px-1">
+                                  Use each channel card above to proceed with send flow.
                                 </div>
                               )}
                             </div>
-                          </details>
-                        </div>
-
-                        {(activeSendFlow?.msgIndex === i || msg.active_node === 'WRITER') ? (
-                          <div className="w-full mt-4 animate-in slide-in-from-bottom-2 duration-300">
-
-                            {/* DRAFTING STATE */}
-                            {msg.active_node === 'WRITER' && !activeSendFlow ? (
-                              <div className="flex flex-col gap-4 w-full animate-pulse">
-                                <div className="p-6 rounded-2xl bg-white/5 border border-white/10 border-dashed flex items-center gap-4 text-zinc-500">
-                                  <div className="w-10 h-10 rounded-xl bg-zinc-800 animate-spin flex items-center justify-center">⏳</div>
-                                  <div>
-                                    <p className="text-sm font-bold">Drafting personalized outreach...</p>
-                                    <p className="text-xs">Personalizing for prospect profile</p>
-                                  </div>
-                                </div>
-                              </div>
-                            ) : null}
-
-                            {/* MANUAL SEND FLOW (Fallback or Override) */}
-                            {activeSendFlow?.msgIndex === i && activeSendFlow.step === 'preview' && (
-                              <div className="w-full mt-4 animate-in slide-in-from-bottom-2 duration-300">
-                                {activeSendFlow.type === 'email' && (
-                                  <EmailPreviewCard
-                                    content={activeSendFlow.content}
-                                    previewMode={true}
-                                    onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
-                                    onCancel={() => setActiveSendFlow(null)}
-                                    // Audio props can be added here if manual flow supports audio generation
-                                    onConvertAudio={() => handleGenerateAudio(activeSendFlow.content)}
-                                    isAudioLoading={loadingAction}
-                                  />
-                                )}
-                                {activeSendFlow.type === 'linkedin' && (
-                                  <LinkedInPreviewCard
-                                    content={activeSendFlow.content}
-                                    previewMode={true}
-                                    onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
-                                    onCancel={() => setActiveSendFlow(null)}
-                                    onConvertAudio={() => handleGenerateAudio(activeSendFlow.content)}
-                                    isAudioLoading={loadingAction}
-                                  />
-                                )}
-                                {activeSendFlow.type === 'whatsapp' && (
-                                  <WhatsAppPreviewCard
-                                    content={activeSendFlow.content}
-                                    previewMode={true}
-                                    onProceed={() => setActiveSendFlow({ ...activeSendFlow, step: 'input' })}
-                                    onCancel={() => setActiveSendFlow(null)}
-                                    onConvertAudio={() => handleGenerateAudio(activeSendFlow.content)}
-                                    isAudioLoading={loadingAction}
-                                  />
-                                )}
-                              </div>
-                            )}
-
-                            {activeSendFlow?.msgIndex === i && activeSendFlow.step === 'input' && (
-                              <div className="p-4 border border-purple-500/30 bg-purple-900/10 rounded-xl mt-2">
-                                <ContactInputStep
-                                  activeSendFlow={activeSendFlow}
-                                  setActiveSendFlow={setActiveSendFlow}
-                                  executeSend={(val) => executeSend(val, activeSendFlow.content, activeSendFlow.content)}
-                                  loadingAction={loadingAction}
-                                  onCancel={() => setActiveSendFlow(null)}
-                                />
-                              </div>
-                            )}
-
-                          </div>
-                        ) : !hasStructuredChannelContent(msg) ? (
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              onClick={() => handleSendAction(i, msg.generated_content?.email || msg.streaming_generated_content?.email || msg.content, 'email')}
-                              className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-purple-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2"
-                            >
-                              <Mail className="w-3 h-3" /> Email
-                            </button>
-                            <button
-                              onClick={() => handleSendAction(i, msg.generated_content?.whatsapp || msg.streaming_generated_content?.whatsapp || msg.content, 'whatsapp')}
-                              className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-green-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2"
-                            >
-                              <Phone className="w-3 h-3" /> WhatsApp
-                            </button>
-                            <button
-                              onClick={() => handleSendAction(i, msg.generated_content?.linkedin || msg.streaming_generated_content?.linkedin || msg.content, 'linkedin')}
-                              className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-700/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2"
-                            >
-                              {/* Using Map icon temporarily for LinkedIn or text, reusing generic icon if needed, but text is clearer */}
-                              <span className="font-bold text-[10px] bg-blue-600 text-white px-1 rounded">in</span> LinkedIn
-                            </button>
-                            <button
-                              onClick={() => handleGenerateAudio(msg.content, msg.id)}
-                              disabled={!ttsAvailable || loadingAction}
-                              title={!ttsAvailable ? (ttsError || "TTS unavailable on backend") : ""}
-                              className="px-3 py-1.5 bg-[#1A1A1A] border border-white/10 hover:border-blue-500/50 rounded-lg text-xs font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              <Volume2 className="w-3 h-3" /> Audio
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="text-[11px] text-zinc-500 px-1">
-                            Use each channel card above to proceed with send flow.
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                          )}
+                        </div >
                 </div>
               ))}
-              <div ref={bottomRef} className="h-4" />
-            </div>
+                  <div ref={bottomRef} className="h-4" />
+                </div>
 
 
-            {/* Input Area */}
-            <div className="p-4 sm:p-6 relative z-40 shrink-0 w-full max-w-4xl mx-auto">
+            {/* Input Area */ }
+                < div className = {`p-4 sm:p-6 relative z-40 shrink-0 w-full mx-auto ${isWriterMode ? "max-w-6xl" : "max-w-4xl"}`}>
+              {isWriterMode && (
+                <div className="mb-4 article-sheet rounded-2xl p-4 sm:p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <p className="text-xs tracking-[0.2em] uppercase text-amber-300/75">Writer Studio</p>
+                    <div className="flex items-center gap-2">
+                      <div className="text-[11px] text-amber-100/70">Prompt context is auto-injected into each request</div>
+                      <button
+                        onClick={() => setIsWriterStudioOpen((prev) => !prev)}
+                        className="px-2.5 py-1 rounded-lg border border-amber-300/25 bg-amber-300/10 text-[10px] uppercase tracking-[0.14em] text-amber-100 hover:bg-amber-300/15 transition-colors"
+                      >
+                        {isWriterStudioOpen ? "Hide Studio" : "Show Studio"}
+                      </button>
+                    </div>
+                  </div>
+                  {isWriterStudioOpen ? (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input
+                          value={writerTitle}
+                          onChange={(e) => setWriterTitle(e.target.value)}
+                          placeholder="Article title (optional)"
+                          className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 placeholder:text-amber-200/40 outline-none focus:border-amber-300/45"
+                        />
+                        <input
+                          value={writerAudience}
+                          onChange={(e) => setWriterAudience(e.target.value)}
+                          placeholder="Audience (e.g. SaaS founders)"
+                          className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 placeholder:text-amber-200/40 outline-none focus:border-amber-300/45"
+                        />
+                        <select
+                          value={writerFormat}
+                          onChange={(e) => setWriterFormat(e.target.value)}
+                          className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 outline-none focus:border-amber-300/45"
+                        >
+                          {WRITER_FORMAT_OPTIONS.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={writerTone}
+                          onChange={(e) => setWriterTone(e.target.value)}
+                          className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 outline-none focus:border-amber-300/45"
+                        >
+                          {WRITER_TONE_OPTIONS.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                        <input
+                          value={writerTargetWords}
+                          onChange={(e) => setWriterTargetWords(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))}
+                          placeholder="Target words (e.g. 900)"
+                          className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 placeholder:text-amber-200/40 outline-none focus:border-amber-300/45"
+                        />
+                        <input
+                          value={writerKeyword}
+                          onChange={(e) => setWriterKeyword(e.target.value)}
+                          placeholder="Primary SEO keyword (optional)"
+                          className="bg-[#120e09] border border-amber-300/20 rounded-xl px-3 py-2.5 text-sm text-amber-50 placeholder:text-amber-200/40 outline-none focus:border-amber-300/45"
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {WRITER_PROMPT_PRESETS.map((preset) => (
+                          <button
+                            key={preset}
+                            onClick={() => setInput(preset)}
+                            className="px-3 py-1.5 rounded-lg bg-amber-300/10 border border-amber-300/25 text-[11px] text-amber-100 hover:bg-amber-300/15 transition-colors"
+                          >
+                            {preset.length > 56 ? `${preset.slice(0, 56)}...` : preset}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-xs text-amber-100/70">
+                      Writer Studio is hidden. Click <span className="text-amber-200 font-medium">Show Studio</span> to edit format, tone, and SEO settings.
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Mentions Dropdown */}
               {showMentions && (
                 <div className="absolute bottom-24 left-6 z-50 w-64 bg-[#111] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-2">
@@ -1435,8 +1678,8 @@ export default function OutreachChat() {
                 </div>
               )}
 
-              <div className="max-w-4xl mx-auto relative group">
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl opacity-20 group-focus-within:opacity-60 blur transition duration-500"></div>
+              <div className={`mx-auto relative group ${isWriterMode ? "max-w-6xl" : "max-w-4xl"}`}>
+                <div className={`absolute -inset-0.5 rounded-2xl opacity-20 group-focus-within:opacity-60 blur transition duration-500 ${isWriterMode ? "bg-gradient-to-r from-amber-400 to-orange-500" : "bg-gradient-to-r from-purple-600 to-blue-600"}`}></div>
 
                 {/* Image Preview */}
                 {selectedImage && (
@@ -1451,7 +1694,7 @@ export default function OutreachChat() {
                   </div>
                 )}
 
-                <div className="relative flex items-center bg-[#0A0A0A] border border-white/10 rounded-2xl px-4 py-3 gap-4 shadow-2xl">
+                <div className={`relative flex items-center rounded-2xl px-4 py-3 gap-4 shadow-2xl ${isWriterMode ? "bg-[#120d08] border border-amber-300/25" : "bg-[#0A0A0A] border border-white/10"}`}>
 
                   {/* File Input */}
                   <input
@@ -1463,7 +1706,7 @@ export default function OutreachChat() {
                   />
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="p-2 -ml-2 rounded-xl text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"
+                    className={`p-2 -ml-2 rounded-xl transition-colors ${isWriterMode ? "text-amber-200/70 hover:text-amber-100 hover:bg-amber-300/10" : "text-neutral-400 hover:text-white hover:bg-white/10"}`}
                   >
                     <Paperclip className="w-5 h-5" />
                   </button>
@@ -1503,15 +1746,15 @@ export default function OutreachChat() {
                         sendMessage();
                       }
                     }}
-                    placeholder="Type your request here... Use @ to mention contacts"
-                    className="flex-1 bg-transparent outline-none text-base text-white placeholder-neutral-600 font-medium"
+                    placeholder={inputPlaceholder}
+                    className={`flex-1 bg-transparent outline-none text-base font-medium ${isWriterMode ? "text-amber-50 placeholder-amber-100/40" : "text-white placeholder-neutral-600"}`}
                     disabled={isStreaming}
                     autoFocus
                   />
                   <button
                     onClick={sendMessage}
                     className="p-3 rounded-xl bg-purple-600 text-white hover:bg-purple-500 transition-all shadow-lg shadow-purple-900/20"
-                    disabled={isStreaming || !input.trim()}
+                    disabled={isStreaming || (!input.trim() && !selectedImage)}
                   >
                     {isStreaming ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                   </button>
