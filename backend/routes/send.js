@@ -3,7 +3,7 @@ const nodemailer = require("nodemailer");
 
 // ⚠️ REPLACE THESE WITH YOUR REAL APP PASSWORD ⚠️
 // Go to Google Account > Security > 2-Step Verification > App Passwords
-const SENDER_EMAIL = process.env.EMAIL_USER;
+const SENDER_EMAIL = process.env.MAIL_USER;
 const APP_PASSWORD = process.env.EMAIL_PASS; // The 16-digit code, NOT your normal password
 
 router.post("/email", async (req, res) => {

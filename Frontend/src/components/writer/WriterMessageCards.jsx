@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { BookOpenText, Clipboard, Check, PencilLine, FileText } from "lucide-react";
+import { BookOpenText, Clipboard, Check, PencilLine, FileText, Volume2, Loader2, Linkedin } from "lucide-react";
 import MarkdownRenderer from "../MarkdownRenderer";
 
 const countWords = (text) => {
@@ -66,6 +66,10 @@ export function WriterAssistantDraftCard({
   isStreaming,
   isLoading,
   onRefine,
+  audioPath,
+  onConvertAudio,
+  isAudioLoading,
+  onShareLinkedIn
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -129,22 +133,61 @@ export function WriterAssistantDraftCard({
         <span className="text-sm text-amber-100/70">Writer is preparing your draft...</span>
       )}
 
+      {/* Audio Player */}
+      {!isLoading && content && audioPath && (
+        <div className="mt-4 px-4 py-3 bg-amber-300/5 border border-amber-300/20 rounded-xl flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 w-full">
+            <span className="text-amber-100 text-xs font-medium uppercase tracking-wider whitespace-nowrap flex items-center gap-2">
+              <Volume2 className="w-3.5 h-3.5" />
+              <span>Listen</span>
+            </span>
+            <audio
+              src={audioPath.startsWith("http") ? audioPath : `http://localhost:8000${audioPath}`}
+              controls
+              className="h-8 w-full max-w-sm opacity-90 hover:opacity-100 transition-opacity invert-[.9] sepia-[.5] saturate-[300%] hue-rotate-[15deg]"
+            />
+          </div>
+        </div>
+      )}
+
       {!isLoading && content && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            onClick={handleCopy}
-            className="inline-flex items-center gap-2 rounded-lg border border-amber-300/25 bg-amber-300/10 px-3 py-1.5 text-xs text-amber-100 hover:bg-amber-300/15 transition-colors"
-          >
-            {copied ? <Check className="w-3.5 h-3.5" /> : <Clipboard className="w-3.5 h-3.5" />}
-            {copied ? "Copied" : "Copy Draft"}
-          </button>
-          <button
-            onClick={onRefine}
-            className="inline-flex items-center gap-2 rounded-lg border border-amber-300/25 bg-black/25 px-3 py-1.5 text-xs text-amber-100 hover:bg-black/35 transition-colors"
-          >
-            <PencilLine className="w-3.5 h-3.5" />
-            Refine Draft
-          </button>
+        <div className="mt-4 flex flex-wrap gap-2 items-center justify-between">
+          <div className="flex gap-2">
+            <button
+              onClick={handleCopy}
+              className="inline-flex items-center gap-2 rounded-lg border border-amber-300/25 bg-amber-300/10 px-3 py-1.5 text-xs text-amber-100 hover:bg-amber-300/15 transition-colors"
+            >
+              {copied ? <Check className="w-3.5 h-3.5" /> : <Clipboard className="w-3.5 h-3.5" />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+            <button
+              onClick={onRefine}
+              className="inline-flex items-center gap-2 rounded-lg border border-amber-300/25 bg-black/25 px-3 py-1.5 text-xs text-amber-100 hover:bg-black/35 transition-colors"
+            >
+              <PencilLine className="w-3.5 h-3.5" />
+              Refine
+            </button>
+          </div>
+
+          <div className="flex gap-2">
+            {!audioPath && (
+              <button
+                onClick={onConvertAudio}
+                disabled={isAudioLoading}
+                className="inline-flex items-center gap-2 rounded-lg border border-amber-300/25 bg-amber-300/5 px-3 py-1.5 text-xs text-amber-100 hover:bg-amber-300/10 transition-colors disabled:opacity-50"
+              >
+                {isAudioLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Volume2 className="w-3.5 h-3.5" />}
+                {isAudioLoading ? "Converting..." : "Convert to Audio"}
+              </button>
+            )}
+            <button
+              onClick={onShareLinkedIn}
+              className="inline-flex items-center gap-2 rounded-lg bg-[#0A66C2] px-4 py-1.5 text-xs font-bold text-white hover:bg-[#004182] transition-colors shadow-lg shadow-blue-900/20"
+            >
+              <Linkedin className="w-3.5 h-3.5" />
+              Share on LinkedIn
+            </button>
+          </div>
         </div>
       )}
     </div>

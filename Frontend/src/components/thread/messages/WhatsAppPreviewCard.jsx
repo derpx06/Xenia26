@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, Phone, Video, Search, MoreVertical, Smile, Paperclip, Mic, Loader2, ArrowLeft, ArrowRight, Volume2, Maximize2, Minimize2, MessageSquare } from 'lucide-react';
 
 export function WhatsAppPreviewCard({ content, onSend, onCancel, defaultPhone = "", previewMode = false, onProceed, audioPath, onConvertAudio, isAudioLoading, attachments = [] }) {
@@ -7,13 +7,22 @@ export function WhatsAppPreviewCard({ content, onSend, onCancel, defaultPhone = 
     const [message, setMessage] = useState("");
     const [isSending, setIsSending] = useState(false);
     const [isExpanded, setIsExpanded] = useState(false);
+    const textareaRef = useRef(null);
 
     // Sync state with content prop (for streaming)
-    React.useEffect(() => {
+    useEffect(() => {
         if (content) {
             setMessage(content);
         }
     }, [content]);
+
+    // Auto-resize textarea
+    useEffect(() => {
+        if (isExpanded && textareaRef.current) {
+            textareaRef.current.style.height = 'auto';
+            textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+        }
+    }, [message, isExpanded]);
 
     const handleAction = async () => {
         if (previewMode) {
@@ -136,9 +145,10 @@ export function WhatsAppPreviewCard({ content, onSend, onCancel, defaultPhone = 
                                         </div>
                                     )}
                                     <textarea
+                                        ref={textareaRef}
                                         value={message}
                                         onChange={(e) => setMessage(e.target.value)}
-                                        className="w-full min-h-[100px] max-h-[400px] bg-transparent text-zinc-100 placeholder-emerald-200/50 outline-none resize-none p-2 text-lg leading-relaxed font-medium"
+                                        className="w-full min-h-[100px] bg-transparent text-zinc-100 placeholder-emerald-200/50 outline-none resize-none p-2 text-lg leading-relaxed font-medium overflow-hidden"
                                         placeholder="Type a WhatsApp message..."
                                     />
                                     {/* Time tick */}
