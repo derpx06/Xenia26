@@ -21,6 +21,10 @@ SARGE_IMPORT_ERROR = "SARGE not initialized"
 run_sarge = None
 stream_sarge = None
 get_tts = None
+
+DEEP_RESEARCH_AVAILABLE = False
+DEEP_RESEARCH_IMPORT_ERROR = "Deep researcher not initialized"
+deep_research_graph = None
 import uuid
 import os
 import asyncio
@@ -75,6 +79,54 @@ def _ensure_sarge_loaded() -> bool:
         SARGE_AVAILABLE = False
         SARGE_IMPORT_ERROR = str(e)
         return False
+
+
+def _ensure_deep_research_loaded() -> bool:
+    global DEEP_RESEARCH_AVAILABLE, DEEP_RESEARCH_IMPORT_ERROR, deep_research_graph
+
+    if DEEP_RESEARCH_AVAILABLE and deep_research_graph:
+        return True
+
+    try:
+        from ml.ollama_deep_researcher.graph import graph as _deep_research_graph
+        deep_research_graph = _deep_research_graph
+        DEEP_RESEARCH_AVAILABLE = True
+        DEEP_RESEARCH_IMPORT_ERROR = None
+        return True
+    except Exception as e:
+        DEEP_RESEARCH_AVAILABLE = False
+        DEEP_RESEARCH_IMPORT_ERROR = str(e)
+        return False
+
+
+def _state_get(value: Any, key: str, default: Any = None) -> Any:
+    if isinstance(value, dict):
+        return value.get(key, default)
+    return getattr(value, key, default)
+
+
+def _chunk_text(text: str, chunk_size: int = 260) -> List[str]:
+    if not text:
+        return []
+    return [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+
+
+def _compose_draft_sections(draft_sections: Any) -> str:
+    if not isinstance(draft_sections, dict):
+        return ""
+
+    def _to_int(value: Any) -> int:
+        try:
+            return int(value)
+        except Exception:
+            return 10**9
+
+    chunks: List[str] = []
+    for key in sorted(draft_sections.keys(), key=_to_int):
+        text = str(draft_sections.get(key, "")).strip()
+        if text:
+            chunks.append(text)
+    return "\n\n".join(chunks).strip()
 
 
 async def _load_tts_or_503():
@@ -668,6 +720,122 @@ async def agent_chat_stream(request: AgentRequest, http_request: Request):
             status_code=500,
             detail=f"Agent chat failed: {str(e)}"
         )
+
+
+@router.post("/agent/writer/chat", response_class=StreamingResponse)
+async def writer_chat_stream(request: AgentRequest):
+    """
+    Stream Digital Newsroom writer responses from the deep-research graph.
+    """
+    if not _ensure_deep_research_loaded():
+        raise HTTPException(
+            status_code=503,
+            detail=f"Writer agent unavailable: {DEEP_RESEARCH_IMPORT_ERROR}"
+        )
+
+    thread_id = request.thread_id or str(uuid.uuid4())
+    add_message(
+        thread_id=thread_id,
+        role="user",
+        content=request.message
+    )
+
+    async def stream_writer():
+        emitted_article = ""
+        last_node = None
+
+        yield f"data: {json.dumps({'thread_id': thread_id})}\n\n"
+
+        config = {
+            "configurable": {
+                "local_llm": request.model or os.getenv("LLM_MODEL", "llama3.2"),
+                "search_api": os.getenv("DEEP_RESEARCH_SEARCH_API", "tavily"),
+                "fetch_full_page": os.getenv("DEEP_RESEARCH_FETCH_FULL_PAGE", "false").lower() == "true",
+                "max_web_research_loops": int(os.getenv("DEEP_RESEARCH_MAX_LOOPS", "2")),
+                "web_results_per_topic": int(os.getenv("DEEP_RESEARCH_WEB_RESULTS_PER_TOPIC", "4")),
+                "wiki_results_per_topic": int(os.getenv("DEEP_RESEARCH_WIKI_RESULTS_PER_TOPIC", "2")),
+                "image_results_per_topic": int(os.getenv("DEEP_RESEARCH_IMAGE_RESULTS_PER_TOPIC", "3")),
+                "include_images_in_research": os.getenv("DEEP_RESEARCH_INCLUDE_IMAGES", "true").lower() == "true",
+                "include_images_in_article": os.getenv("DEEP_RESEARCH_INCLUDE_IMAGES_IN_ARTICLE", "false").lower() == "true",
+                "max_images_per_article": int(os.getenv("DEEP_RESEARCH_MAX_IMAGES_PER_ARTICLE", "2")),
+                "max_research_bible_chars": int(os.getenv("DEEP_RESEARCH_MAX_BIBLE_CHARS", "9000")),
+                "research_task_timeout_seconds": int(os.getenv("DEEP_RESEARCH_RESEARCH_TIMEOUT_SECONDS", "20")),
+                "llm_timeout_seconds": int(os.getenv("DEEP_RESEARCH_LLM_TIMEOUT_SECONDS", "180")),
+                "writer_section_timeout_seconds": int(os.getenv("DEEP_RESEARCH_WRITER_SECTION_TIMEOUT_SECONDS", "110")),
+            }
+        }
+
+        try:
+            async for event in deep_research_graph.astream({"topic": request.message}, config=config):
+                if not event:
+                    continue
+
+                node_name = next(iter(event.keys()))
+                update = event.get(node_name) or {}
+                upper_node = node_name.upper()
+
+                if upper_node != last_node:
+                    yield f"data: {AgentStreamChunk(type='thought', content=f'[PHASE] {upper_node}').model_dump_json()}\n\n"
+                    last_node = upper_node
+
+                node_logs = _state_get(update, "logs", []) or []
+                for log_line in node_logs:
+                    log_text = str(log_line).strip()
+                    if not log_text:
+                        continue
+                    yield f"data: {AgentStreamChunk(type='thought', content=log_text).model_dump_json()}\n\n"
+
+                final_from_editor = (_state_get(update, "final_article", "") or "").strip()
+                if final_from_editor:
+                    if not emitted_article:
+                        for part in _chunk_text(final_from_editor):
+                            yield f"data: {AgentStreamChunk(type='response', content=part).model_dump_json()}\n\n"
+                    emitted_article = final_from_editor
+
+            final_article = emitted_article.strip()
+            if not final_article:
+                final_state = await deep_research_graph.ainvoke({"topic": request.message}, config=config)
+                final_article = (_state_get(final_state, "final_article", "") or "").strip()
+                if not final_article:
+                    final_article = _compose_draft_sections(_state_get(final_state, "draft_sections", {}))
+                if final_article:
+                    for part in _chunk_text(final_article):
+                        yield f"data: {AgentStreamChunk(type='response', content=part).model_dump_json()}\n\n"
+
+            if not final_article:
+                final_article = "I could not generate a writer response for this request."
+
+            add_message(
+                thread_id=thread_id,
+                role="assistant",
+                content=final_article
+            )
+
+            done_chunk = AgentStreamChunk(
+                type="done",
+                content=final_article,
+                metadata={
+                    "thread_id": thread_id,
+                    "writer_mode": "digital_newsroom",
+                    "word_count": len(final_article.split()),
+                }
+            )
+            yield f"data: {done_chunk.model_dump_json()}\n\n"
+
+        except Exception as e:
+            error_text = f"Writer pipeline failed: {str(e)}"
+            yield f"data: {AgentStreamChunk(type='error', content=error_text).model_dump_json()}\n\n"
+            yield f"data: {AgentStreamChunk(type='done', content=error_text).model_dump_json()}\n\n"
+
+    return StreamingResponse(
+        stream_writer(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 @router.post("/agent/chat-sync", response_model=AgentResponse)

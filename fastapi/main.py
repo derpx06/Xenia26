@@ -1,9 +1,14 @@
 import os
 import warnings
+from pathlib import Path
+from dotenv import load_dotenv
 
 # Suppress deprecation warnings from dependencies (Python 3.14 compatibility issues)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module="langchain_core")
+
+# Load project environment variables from fastapi/.env
+load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
 # Set USER_AGENT if not already set
 if not os.environ.get("USER_AGENT"):

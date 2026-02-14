@@ -6,6 +6,8 @@ import MessageAudioPlayer from "../components/thread/messages/MessageAudioPlayer
 import { EmailPreviewCard } from "../components/thread/messages/EmailPreviewCard";
 import { WhatsAppPreviewCard } from "../components/thread/messages/WhatsAppPreviewCard";
 import { LinkedInPreviewCard } from "../components/thread/messages/LinkedInPreviewCard";
+import { WriterAssistantDraftCard, WriterUserBriefCard } from "../components/writer/WriterMessageCards";
+import WriterProcessingPanel from "../components/writer/WriterProcessingPanel";
 import ContactInputStep from "../components/ContactInputStep";
 import ChatSidebar from "../components/ChatSidebar";
 import { motion, AnimatePresence } from "framer-motion";
@@ -77,6 +79,47 @@ const countWords = (text) => {
   return text.trim().split(/\s+/).filter(Boolean).length;
 };
 
+const buildWriterInstruction = ({
+  userPrompt,
+  title,
+  format,
+  tone,
+  targetWords,
+  audience,
+  keyword,
+}) => {
+  const cleanedPrompt = (userPrompt || "").trim();
+  const hasPrompt = cleanedPrompt.length > 0;
+  const resolvedWords = String(targetWords || "").trim() || "900";
+  const resolvedFormat = (format || "Thought Leadership").trim();
+  const resolvedTone = (tone || "Professional").trim();
+  const resolvedAudience = (audience || "Growth leaders").trim();
+  const resolvedTitle = (title || "").trim();
+  const resolvedKeyword = (keyword || "").trim();
+
+  return [
+    "You are Verve Writer, an article-first content writing agent.",
+    "",
+    "TASK",
+    hasPrompt ? cleanedPrompt : "Write a complete long-form article from the brief below.",
+    "",
+    "ARTICLE BRIEF",
+    `- Title hint: ${resolvedTitle || "Generate a strong title"}`,
+    `- Format: ${resolvedFormat}`,
+    `- Tone: ${resolvedTone}`,
+    `- Audience: ${resolvedAudience}`,
+    `- Target length: ${resolvedWords} words`,
+    `- Primary keyword: ${resolvedKeyword || "none"}`,
+    "",
+    "OUTPUT RULES",
+    "- Output in markdown only.",
+    "- Structure must include: H1 title, deck line, Hook, Core Insights, Practical Framework, Action Plan, CTA.",
+    "- Keep writing article-focused (no email, no DM, no outreach style).",
+    "- Use specific examples and actionable detail.",
+    "- Avoid a Sources section in the final draft.",
+  ].join("\n");
+};
+
 const useDebouncedValue = (value, delay = 300) => {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
@@ -119,6 +162,8 @@ const BACKEND_API_URL = "http://localhost:8080/api";
 
 export default function OutreachChat({ mode = "outreach" }) {
   const isWriterMode = mode === "writer";
+  const chatAgentType = isWriterMode ? "writer" : "outreach";
+  const defaultSessionTitle = isWriterMode ? "New Writer Chat" : "New Outreach Chat";
   const chatHistoryKey = isWriterMode ? "writer-chat-history" : "outreach-chat-history";
   const assistantTitle = isWriterMode ? "Verve Writer" : "Verve AI";
   const assistantIntro = isWriterMode
@@ -186,7 +231,9 @@ export default function OutreachChat({ mode = "outreach" }) {
       if (!userEmail) return;
 
       try {
-        const res = await fetch(`${BACKEND_API_URL}/chat/sessions?email=${encodeURIComponent(userEmail)}`);
+        const res = await fetch(
+          `${BACKEND_API_URL}/chat/sessions?email=${encodeURIComponent(userEmail)}&agentType=${encodeURIComponent(chatAgentType)}`
+        );
         if (res.ok) {
           const data = await res.json();
           setChatSessions(data);
@@ -206,14 +253,16 @@ export default function OutreachChat({ mode = "outreach" }) {
     };
 
     if (senderIdentity.email) fetchSessions();
-  }, [senderIdentity.email]);
+  }, [senderIdentity.email, chatAgentType]);
 
   // 2. Fetch Messages for Active Session
   useEffect(() => {
     const fetchSessionMessages = async () => {
       if (!activeSessionId) return;
       try {
-        const res = await fetch(`${BACKEND_API_URL}/chat/sessions/${activeSessionId}`);
+        const res = await fetch(
+          `${BACKEND_API_URL}/chat/sessions/${activeSessionId}?agentType=${encodeURIComponent(chatAgentType)}`
+        );
         if (res.ok) {
           const data = await res.json();
           setMessages(data.messages || []);
@@ -223,7 +272,7 @@ export default function OutreachChat({ mode = "outreach" }) {
       }
     };
     fetchSessionMessages();
-  }, [activeSessionId]);
+  }, [activeSessionId, chatAgentType]);
 
   // 3. Auto-Save Logic (Sync to DB)
   useEffect(() => {
@@ -234,19 +283,20 @@ export default function OutreachChat({ mode = "outreach" }) {
         // Determine dynamic title if it's "New Chat" and we have user messages
         let newTitle = undefined;
         const currentSession = chatSessions.find(s => s._id === activeSessionId);
-        if (currentSession && currentSession.title === "New Chat") {
+        if (currentSession && (currentSession.title === defaultSessionTitle || currentSession.title === "New Chat")) {
           const firstUserMsg = messages.find(m => m.role === 'user');
           if (firstUserMsg) {
             newTitle = firstUserMsg.content.slice(0, 30) + (firstUserMsg.content.length > 30 ? "..." : "");
           }
         }
 
-        await fetch(`${BACKEND_API_URL}/chat/sessions/${activeSessionId}`, {
+        await fetch(`${BACKEND_API_URL}/chat/sessions/${activeSessionId}?agentType=${encodeURIComponent(chatAgentType)}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             messages,
-            title: newTitle
+            title: newTitle,
+            agentType: chatAgentType
           })
         });
 
@@ -265,7 +315,7 @@ export default function OutreachChat({ mode = "outreach" }) {
     if (messagesDebounced.length > 0) {
       syncSession();
     }
-  }, [messagesDebounced, activeSessionId]);
+  }, [messagesDebounced, activeSessionId, chatAgentType]);
 
   const handleCreateSession = async (emailOverride = null) => {
     const email = emailOverride || senderIdentity.email || localStorage.getItem("userEmail");
@@ -284,14 +334,15 @@ export default function OutreachChat({ mode = "outreach" }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userEmail: email,
-          title: "New Chat",
+          agentType: chatAgentType,
+          title: defaultSessionTitle,
           messages: [initialMsg]
         })
       });
 
       if (res.ok) {
         const newSession = await res.json();
-        setChatSessions([newSession, ...chatSessions]);
+        setChatSessions(prev => [newSession, ...prev]);
         setActiveSessionId(newSession._id);
         setMessages([initialMsg]);
         setHasStarted(false); // Go to splash screen for new chat feels fresh
@@ -303,7 +354,7 @@ export default function OutreachChat({ mode = "outreach" }) {
 
   const handleDeleteSession = async (sessionId) => {
     try {
-      const res = await fetch(`${BACKEND_API_URL}/chat/sessions/${sessionId}`, {
+      const res = await fetch(`${BACKEND_API_URL}/chat/sessions/${sessionId}?agentType=${encodeURIComponent(chatAgentType)}`, {
         method: "DELETE"
       });
       if (res.ok) {
@@ -324,10 +375,10 @@ export default function OutreachChat({ mode = "outreach" }) {
   const handleRenameSession = async (sessionId, newTitle) => {
     try {
       setChatSessions(prev => prev.map(s => s._id === sessionId ? { ...s, title: newTitle } : s));
-      await fetch(`${BACKEND_API_URL}/chat/sessions/${sessionId}`, {
+      await fetch(`${BACKEND_API_URL}/chat/sessions/${sessionId}?agentType=${encodeURIComponent(chatAgentType)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: newTitle })
+        body: JSON.stringify({ title: newTitle, agentType: chatAgentType })
       });
     } catch (err) {
       console.error("Failed to rename session:", err);
@@ -357,7 +408,7 @@ export default function OutreachChat({ mode = "outreach" }) {
 
       if (email) {
         try {
-          const res = await fetch(`${BACKEND_API_URL} /user/profile / ${encodeURIComponent(email)} `);
+          const res = await fetch(`${BACKEND_API_URL}/user/profile/${encodeURIComponent(email)}`);
           if (res.ok) {
             const data = await res.json();
             const profileUser = data?.user || {};
@@ -735,6 +786,14 @@ export default function OutreachChat({ mode = "outreach" }) {
 
     // Filter mentions to ensure they are still in the input (simple check)
     const activeMentions = mentionedContacts.filter(c => originalInput.includes(c.name));
+    const writerBrief = isWriterMode ? {
+      title: writerTitle,
+      format: writerFormat,
+      tone: writerTone,
+      targetWords: writerTargetWords,
+      audience: writerAudience,
+      keyword: writerKeyword,
+    } : null;
 
     // Optimistically add user message
     const userMsg = {
@@ -742,7 +801,8 @@ export default function OutreachChat({ mode = "outreach" }) {
       type: "text",
       content: originalInput,
       mentions: activeMentions, // Attach mentions metadata
-      image: selectedImage
+      image: selectedImage,
+      writer_brief: writerBrief
     };
     setMessages((prev) => [...prev, userMsg]);
 
@@ -755,7 +815,7 @@ export default function OutreachChat({ mode = "outreach" }) {
     setStreamingContent("");
 
     // Create a placeholder for the assistant message
-    const assistantMsgId = Date.now().toString();
+    const assistantMsgId = `${chatAgentType}-${Date.now()}`;
     const initialAssistantMsg = {
       id: assistantMsgId,
       role: "assistant",
@@ -774,7 +834,10 @@ export default function OutreachChat({ mode = "outreach" }) {
         localStorage.getItem("userName") ||
         localStorage.getItem("name") ||
         "";
-      const response = await fetch(`${API_BASE_URL}/ml/agent/chat`, {
+      const streamEndpoint = isWriterMode
+        ? `${API_BASE_URL}/ml/agent/writer/chat`
+        : `${API_BASE_URL}/ml/agent/chat`;
+      const response = await fetch(streamEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -793,6 +856,10 @@ export default function OutreachChat({ mode = "outreach" }) {
           })),
         }),
       });
+
+      if (!response.ok || !response.body) {
+        throw new Error(`Streaming request failed (${response.status})`);
+      }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -828,12 +895,23 @@ export default function OutreachChat({ mode = "outreach" }) {
                     : data.content;
 
                   msg.thoughts = [...(msg.thoughts || []), thoughtText];
-                  if (thoughtText.includes("[PHASE]") || thoughtText.includes("[MILESTONE]")) {
+                  const phaseMatch = thoughtText.match(/\[PHASE\]\s*([A-Z_]+)/i);
+                  const nodeMatch = thoughtText.match(/^\[([A-Z_]+)\]/i);
+                  if (phaseMatch?.[1]) {
+                    msg.active_node = phaseMatch[1].toUpperCase();
+                    setAgentStatus(phaseMatch[1].replace(/_/g, " "));
+                  } else if (nodeMatch?.[1] && nodeMatch[1].toUpperCase() !== "MILESTONE") {
+                    msg.active_node = nodeMatch[1].toUpperCase();
+                    setAgentStatus(nodeMatch[1].replace(/_/g, " "));
+                  } else if (thoughtText.includes("[MILESTONE]")) {
                     setAgentStatus(thoughtText.replace(/\[.*?\]\s*/, ""));
                   }
                   setStreamingContent(prev => prev + " ");
                 }
                 else if (data.type === "done") {
+                  if (isWriterMode && data.content) {
+                    msg.content = data.content;
+                  }
                   setIsStreaming(false);
                   setStreamingContent("");
                   setAgentStatus("Complete");
@@ -865,6 +943,13 @@ export default function OutreachChat({ mode = "outreach" }) {
                     }
                   }
                 }
+                else if (data.type === "error") {
+                  setIsStreaming(false);
+                  if (isWriterMode) {
+                    setAgentStatus("Error");
+                    msg.content += `\n\n${data.content || "Generation failed."}`;
+                  }
+                }
 
                 return newMessages;
               });
@@ -878,6 +963,14 @@ export default function OutreachChat({ mode = "outreach" }) {
     } catch (error) {
       console.error(error);
       setIsStreaming(false);
+      if (isWriterMode) {
+        setAgentStatus("Error");
+        setMessages(prev => prev.map(m =>
+          m.id === assistantMsgId
+            ? { ...m, content: m.content || "Request failed. Please retry." }
+            : m
+        ));
+      }
     }
   };
 
@@ -1035,13 +1128,15 @@ export default function OutreachChat({ mode = "outreach" }) {
               onCreateSession={() => handleCreateSession()}
               onDeleteSession={handleDeleteSession}
               onRenameSession={handleRenameSession}
+              newChatLabel={isWriterMode ? "New Writer Chat" : "New Outreach Chat"}
             />
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Main Content Area */}
-      <div className={`flex-1 w-full relative aurora-bg flex flex-col h-full overflow-x-hidden transition-all duration-300 ${isSidebarOpen ? "opacity-40 pointer-events-none" : ""}`}>
+      <div className={`flex-1 w-full relative ${isWriterMode ? "writer-bg" : "aurora-bg"} flex flex-col h-full overflow-x-hidden transition-all duration-300 ${isSidebarOpen ? "opacity-40 pointer-events-none" : ""}`}>
+        {isWriterMode && <div className="pointer-events-none absolute inset-0 writer-grid" />}
 
         {/* Toggle Button */}
         <button
@@ -1200,17 +1295,30 @@ export default function OutreachChat({ mode = "outreach" }) {
                       const isCurrentAssistantStream =
                         isStreaming && msg.role === "assistant" && i === messages.length - 1;
                       const shouldShowDraftingLoader =
-                        isCurrentAssistantStream &&
-                        msg.active_node === "WRITER" &&
-                        !hasStructuredChannelContent(msg);
-                      const shouldShowProcessDraftState = shouldShowDraftingLoader && !activeSendFlow;
+                        isWriterMode
+                          ? (isCurrentAssistantStream && !msg.content)
+                          : (
+                            isCurrentAssistantStream &&
+                            msg.active_node === "WRITER" &&
+                            !hasStructuredChannelContent(msg)
+                          );
                       return (
                         <>
 
                           {/* PROCESS BOX (Agent Journey) */}
                           {msg.role === 'assistant' && (
-                            ((isStreaming && i === messages.length - 1) ||
-                              (msg.tool_calls?.length > 0 || msg.tool_results?.length > 0 || msg.thoughts?.length > 0 || msg.active_node)) && (
+                            (isWriterMode ? (
+                              ((isStreaming && i === messages.length - 1) ||
+                                (msg.thoughts?.length > 0 || msg.active_node)) && (
+                                <WriterProcessingPanel
+                                  thoughts={msg.thoughts || []}
+                                  isStreaming={isCurrentAssistantStream}
+                                  activeNode={msg.active_node}
+                                />
+                              )
+                            ) : (
+                              ((isStreaming && i === messages.length - 1) ||
+                                (msg.tool_calls?.length > 0 || msg.tool_results?.length > 0 || msg.thoughts?.length > 0 || msg.active_node)) && (
                               <div className={`mb-4 w-full ${isWriterMode ? "max-w-4xl" : "max-w-2xl"} flex flex-col gap-0 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 backdrop-blur-md ${isWriterMode ? "bg-[#120d08]/90 border border-amber-300/15" : "bg-[#0F0F0F] border border-white/5"}`}>
 
                                 {/* 1. HEADER & PROGRESS STEPS */}
@@ -1315,39 +1423,52 @@ export default function OutreachChat({ mode = "outreach" }) {
                                   </div>
                                 </div>
                               </div>
-                            )
+                              )
+                            ))
                           )}
 
                           {/* MESSAGE BUBBLE */}
                           {(!hasStructuredChannelContent(msg) || msg.role === "user") && (
-                            <div className={`px-4 sm:px-6 py-4 rounded-2xl text-sm shadow-xl backdrop-blur-md border ${msg.role === "user"
-                              ? isWriterMode
-                                ? "bg-amber-300/15 border-amber-300/35 text-amber-50 rounded-tr-sm"
-                                : "bg-purple-600/20 border-purple-500/30 text-white rounded-tr-sm"
-                              : isWriterMode
-                                ? "article-sheet text-amber-50 rounded-tl-sm w-full"
-                                : "bg-[#111]/80 border-white/10 text-neutral-200 rounded-tl-sm w-full"
-                              }`}>
-                              {msg.image && (
-                                <div className="mb-3">
-                                  <img
-                                    src={msg.image}
-                                    alt="Attachment"
-                                    className="max-h-60 w-auto rounded-lg border border-white/10 shadow-lg object-contain bg-black/50"
-                                  />
-                                </div>
-                              )}
-                              {shouldShowDraftingLoader ? (
-                                <div className="flex items-center gap-3 py-2 text-zinc-400 animate-pulse">
-                                  <Loader2 className="w-5 h-5 animate-spin text-purple-500" />
-                                  <span className="font-medium">Drafting personalized content...</span>
-                                </div>
-                              ) : msg.content ? (
-                                <MarkdownRenderer>{msg.content}</MarkdownRenderer>
+                            isWriterMode ? (
+                              msg.role === "user" ? (
+                                <WriterUserBriefCard
+                                  message={msg}
+                                  brief={msg.writer_brief}
+                                />
                               ) : (
-                                <span className="animate-pulse text-zinc-500">Thinking...</span>
-                              )}
-                            </div>
+                                <WriterAssistantDraftCard
+                                  content={msg.content}
+                                  isStreaming={isCurrentAssistantStream}
+                                  isLoading={shouldShowDraftingLoader || (isCurrentAssistantStream && !msg.content)}
+                                  onRefine={() => setInput(`Improve this article draft by strengthening clarity, examples, and transitions:\n\n${msg.content || ""}`)}
+                                />
+                              )
+                            ) : (
+                              <div className={`px-4 sm:px-6 py-4 rounded-2xl text-sm shadow-xl backdrop-blur-md border ${msg.role === "user"
+                                ? "bg-purple-600/20 border-purple-500/30 text-white rounded-tr-sm"
+                                : "bg-[#111]/80 border-white/10 text-neutral-200 rounded-tl-sm w-full"
+                                }`}>
+                                {msg.image && (
+                                  <div className="mb-3">
+                                    <img
+                                      src={msg.image}
+                                      alt="Attachment"
+                                      className="max-h-60 w-auto rounded-lg border border-white/10 shadow-lg object-contain bg-black/50"
+                                    />
+                                  </div>
+                                )}
+                                {shouldShowDraftingLoader ? (
+                                  <div className="flex items-center gap-3 py-2 text-zinc-400 animate-pulse">
+                                    <Loader2 className="w-5 h-5 animate-spin text-purple-500" />
+                                    <span className="font-medium">Drafting personalized content...</span>
+                                  </div>
+                                ) : msg.content ? (
+                                  <MarkdownRenderer>{msg.content}</MarkdownRenderer>
+                                ) : (
+                                  <span className="animate-pulse text-zinc-500">Thinking...</span>
+                                )}
+                              </div>
+                            )
                           )}
 
                           {msg.role === "assistant" && hasStructuredChannelContent(msg) && (
@@ -1575,10 +1696,10 @@ export default function OutreachChat({ mode = "outreach" }) {
                                         <Volume2 className="w-3 h-3" /> Narrate Draft
                                       </button>
                                       <button
-                                        onClick={() => setInput(`Improve this article draft by strengthening clarity and examples:\n\n${msg.content || ""}`)}
+                                        onClick={() => setInput(`Continue this article with the next section, while keeping tone and structure consistent:\n\n${msg.content || ""}`)}
                                         className="px-3 py-1.5 bg-[#1A1A1A] border border-amber-300/20 hover:border-amber-300/40 rounded-lg text-xs font-medium text-amber-100/85 hover:text-amber-50 transition-all"
                                       >
-                                        Refine This Draft
+                                        Continue Writing
                                       </button>
                                     </>
                                   )}
@@ -1601,7 +1722,7 @@ export default function OutreachChat({ mode = "outreach" }) {
 
 
             {/* Input Area */}
-            < div className={`p-4 sm:p-6 relative z-40 shrink-0 w-full mx-auto ${isWriterMode ? "max-w-6xl" : "max-w-4xl"}`}>
+            <div className={`p-4 sm:p-6 relative z-40 shrink-0 w-full mx-auto ${isWriterMode ? "max-w-6xl" : "max-w-4xl"}`}>
               {isWriterMode && (
                 <div className="mb-4 article-sheet rounded-2xl p-4 sm:p-5">
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-3">

@@ -1,6 +1,5 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -12,7 +11,8 @@ export default function MarkdownRenderer({ children, className = "" }) {
         <div className={`markdown-content ${className}`}>
             <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw, rehypeSanitize]}
+                rehypePlugins={[rehypeSanitize]}
+                skipHtml={true}
                 components={{
                     // Code blocks
                     code({ node, inline, className, children, ...props }) {
@@ -44,23 +44,23 @@ export default function MarkdownRenderer({ children, className = "" }) {
                     },
                     // Headings
                     h1: ({ children }) => (
-                        <h1 className="text-xl font-bold text-white mt-4 mb-2">{children}</h1>
+                        <h1 className="text-2xl sm:text-3xl font-bold text-white mt-2 mb-4 leading-tight">{children}</h1>
                     ),
                     h2: ({ children }) => (
-                        <h2 className="text-lg font-bold text-white mt-3 mb-2">{children}</h2>
+                        <h2 className="text-xl sm:text-2xl font-semibold text-white mt-6 mb-3 leading-snug">{children}</h2>
                     ),
                     h3: ({ children }) => (
-                        <h3 className="text-base font-semibold text-neutral-200 mt-2 mb-1">{children}</h3>
+                        <h3 className="text-lg font-semibold text-neutral-100 mt-5 mb-2 leading-snug">{children}</h3>
                     ),
                     // Lists
                     ul: ({ children }) => (
-                        <ul className="list-disc list-inside space-y-1 my-2 text-neutral-200">{children}</ul>
+                        <ul className="list-disc list-inside space-y-1 my-3 text-neutral-200">{children}</ul>
                     ),
                     ol: ({ children }) => (
-                        <ol className="list-decimal list-inside space-y-1 my-2 text-neutral-200">{children}</ol>
+                        <ol className="list-decimal list-inside space-y-1 my-3 text-neutral-200">{children}</ol>
                     ),
                     li: ({ children }) => (
-                        <li className="text-neutral-200 text-sm leading-relaxed">{children}</li>
+                        <li className="text-neutral-200 text-sm leading-relaxed mb-1">{children}</li>
                     ),
                     // Links
                     a: ({ href, children }) => (
@@ -68,24 +68,35 @@ export default function MarkdownRenderer({ children, className = "" }) {
                             href={href}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-blue-400 hover:text-blue-300 underline break-words"
+                            className="text-amber-300 hover:text-amber-200 underline underline-offset-2 break-words"
                         >
                             {children}
                         </a>
                     ),
                     // Paragraphs
                     p: ({ children }) => (
-                        <p className="text-neutral-200 text-sm leading-relaxed my-2">{children}</p>
+                        <p className="text-neutral-100/95 text-[15px] leading-7 my-3">{children}</p>
                     ),
                     // Blockquotes
                     blockquote: ({ children }) => (
-                        <blockquote className="border-l-2 border-blue-500 pl-3 italic text-neutral-300 my-2 text-sm">
+                        <blockquote className="border-l-2 border-amber-400 pl-3 italic text-neutral-300 my-3 text-sm">
                             {children}
                         </blockquote>
                     ),
+                    img: ({ src, alt }) => (
+                        <figure className="my-5">
+                            <img
+                                src={src}
+                                alt={alt || "Article visual"}
+                                loading="lazy"
+                                className="w-full rounded-xl border border-white/10 bg-black/30 object-contain max-h-[420px]"
+                            />
+                            {alt ? <figcaption className="mt-2 text-xs text-neutral-400">{alt}</figcaption> : null}
+                        </figure>
+                    ),
                     // Tables
                     table: ({ children }) => (
-                        <div className="overflow-x-auto my-2">
+                        <div className="overflow-x-auto my-3">
                             <table className="min-w-full text-sm border border-white/10">
                                 {children}
                             </table>

@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from "./pages/RegisterPage";
 import Dashboard from "./pages/Dashboard";
 import OutreachChat from './pages/OutreachChat';
+import WriterChat from './pages/WriterChat';
 import Profile from './pages/Profile';
 import Analytics from './pages/Analytics';
 
@@ -38,7 +39,7 @@ const App = () => {
 
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/outreach" element={<OutreachChat />} />
-          <Route path="/writer" element={<OutreachChat mode="writer" />} />
+          <Route path="/writer" element={<WriterChat />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/Analytics" element={<Analytics />} />
           {/* <Route path="/contacts" element={<ContactBook />} /> */}

@@ -9,7 +9,8 @@ const ChatSidebar = ({
     onSelectSession,
     onCreateSession,
     onDeleteSession,
-    onRenameSession
+    onRenameSession,
+    newChatLabel = "New Chat"
 }) => {
     // Group sessions by date
     const groupedSessions = sessions.reduce((groups, session) => {
@@ -39,7 +40,7 @@ const ChatSidebar = ({
                     <div className="p-1 bg-gradient-to-br from-purple-600 to-blue-600 rounded-lg group-hover:shadow-lg group-hover:shadow-purple-900/20 transition-all">
                         <Plus className="w-4 h-4 text-white" />
                     </div>
-                    <span>New Chat</span>
+                    <span>{newChatLabel}</span>
                 </button>
             </div>
 

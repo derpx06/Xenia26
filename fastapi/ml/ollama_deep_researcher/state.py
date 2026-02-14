@@ -1,23 +1,21 @@
 import operator
-from dataclasses import dataclass, field
-from typing_extensions import Annotated
+from typing import Annotated, Any, Dict, List, TypedDict
 
 
-@dataclass(kw_only=True)
-class SummaryState:
-    research_topic: str = field(default=None)  # Report topic
-    search_query: str = field(default=None)  # Search query
-    web_research_results: Annotated[list, operator.add] = field(default_factory=list)
-    sources_gathered: Annotated[list, operator.add] = field(default_factory=list)
-    research_loop_count: int = field(default=0)  # Research loop count
-    running_summary: str = field(default=None)  # Final report
+class AgentState(TypedDict, total=False):
+    topic: str
+    writing_brief: Dict[str, Any]
+    sub_topics: List[str]
+    gathered_notes: Annotated[List[str], operator.add]
+    image_candidates: Annotated[List[str], operator.add]
+    research_bible: str
+    outline: List[Dict[str, Any]]
+    current_section_index: int
+    draft_sections: Dict[int, str]
+    final_article: str
+    logs: Annotated[List[str], operator.add]
 
 
-@dataclass(kw_only=True)
-class SummaryStateInput:
-    research_topic: str = field(default=None)  # Report topic
-
-
-@dataclass(kw_only=True)
-class SummaryStateOutput:
-    running_summary: str = field(default=None)  # Final report
+class WorkerState(TypedDict):
+    sub_topic: str
+    topic: str
