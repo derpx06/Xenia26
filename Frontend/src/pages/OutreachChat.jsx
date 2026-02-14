@@ -813,12 +813,26 @@ export default function OutreachChat() {
 
             {/* Chat Scroll Area */}
             <div className="flex-1 overflow-y-auto px-4 md:px-20 pt-24 md:pt-28 pb-6 space-y-6 custom-scrollbar scroll-smooth">
-              {messages.map((msg, i) => (
-                <div key={i} className={`flex w-full ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div className={`flex flex-col max-w-2xl ${msg.role === "user" ? "items-end" : "items-start"} w-full`}>
+                {messages.map((msg, i) => (
+                  <div key={i} className={`flex w-full ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div className={`flex flex-col max-w-2xl ${msg.role === "user" ? "items-end" : "items-start"} w-full`}>
+                      {/*
+                        Show drafting loaders only while the current assistant response is actively streaming.
+                        This prevents stale WRITER state from keeping the loader visible after output is ready.
+                      */}
+                      {(() => {
+                        const isCurrentAssistantStream =
+                          isStreaming && msg.role === "assistant" && i === messages.length - 1;
+                        const shouldShowDraftingLoader =
+                          isCurrentAssistantStream &&
+                          msg.active_node === "WRITER" &&
+                          !hasStructuredChannelContent(msg);
+                        const shouldShowProcessDraftState = shouldShowDraftingLoader && !activeSendFlow;
+                        return (
+                          <>
 
-                    {/* PROCESS BOX (Agent Journey) */}
-                    {msg.role === 'assistant' && (
+                      {/* PROCESS BOX (Agent Journey) */}
+                      {msg.role === 'assistant' && (
                       ((isStreaming && i === messages.length - 1) ||
                         (msg.tool_calls?.length > 0 || msg.tool_results?.length > 0 || msg.thoughts?.length > 0 || msg.active_node)) && (
                         <div className="mb-4 w-full max-w-2xl flex flex-col gap-0 bg-[#0F0F0F] border border-white/5 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 backdrop-blur-md">
@@ -943,7 +957,7 @@ export default function OutreachChat() {
                             />
                           </div>
                         )}
-                        {msg.active_node === 'WRITER' && !hasStructuredChannelContent(msg) ? (
+                        {shouldShowDraftingLoader ? (
                           <div className="flex items-center gap-3 py-2 text-zinc-400 animate-pulse">
                             <Loader2 className="w-5 h-5 animate-spin text-purple-500" />
                             <span className="font-medium">Drafting personalized content...</span>
@@ -1073,11 +1087,11 @@ export default function OutreachChat() {
                           </details>
                         </div>
 
-                        {(activeSendFlow?.msgIndex === i || msg.active_node === 'WRITER') ? (
+                        {(activeSendFlow?.msgIndex === i || shouldShowProcessDraftState) ? (
                           <div className="w-full mt-4 animate-in slide-in-from-bottom-2 duration-300">
 
                             {/* DRAFTING STATE */}
-                            {msg.active_node === 'WRITER' && !activeSendFlow ? (
+                            {shouldShowProcessDraftState ? (
                               <div className="flex flex-col gap-4 w-full animate-pulse">
                                 <div className="p-6 rounded-2xl bg-white/5 border border-white/10 border-dashed flex items-center gap-4 text-zinc-500">
                                   <div className="w-10 h-10 rounded-xl bg-zinc-800 animate-spin flex items-center justify-center">⏳</div>
@@ -1173,12 +1187,15 @@ export default function OutreachChat() {
                           <div className="text-[11px] text-zinc-500 px-1">
                             Use each channel card above to proceed with send flow.
                           </div>
-                        )}
-                      </div>
-                    )}
+                          )}
+                        </div>
+                      )}
+                          </>
+                        );
+                      })()}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
               <div ref={bottomRef} className="h-4" />
             </div>
 
