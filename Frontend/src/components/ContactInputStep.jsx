@@ -48,6 +48,13 @@ export default function ContactInputStep({ activeSendFlow, setActiveSendFlow, ex
 
     const handleSendAction = async () => {
         const value = activeSendFlow.value;
+
+        // Manual send for WhatsApp (empty target)
+        if (!value && activeSendFlow.type === 'whatsapp') {
+            executeSend("");
+            return;
+        }
+
         if (!value) return;
 
         // 1. Check if contact exists
@@ -145,7 +152,7 @@ export default function ContactInputStep({ activeSendFlow, setActiveSendFlow, ex
                     autoFocus
                     placeholder={
                         activeSendFlow.type === 'email' ? "Enter Email address..." :
-                            activeSendFlow.type === 'whatsapp' ? "Enter Phone number..." :
+                            activeSendFlow.type === 'whatsapp' ? "Enter Phone or leave empty for manual selection..." :
                                 "Enter Recipient Name/URL..."
                     }
                     className="bg-transparent border-none outline-none text-sm text-white px-2 flex-1"
@@ -158,7 +165,7 @@ export default function ContactInputStep({ activeSendFlow, setActiveSendFlow, ex
                     // Delay blur to allow click on dropdown items
                     onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
                     onKeyDown={(e) => {
-                        if (e.key === 'Enter' && activeSendFlow.value) {
+                        if (e.key === 'Enter' && (activeSendFlow.value || activeSendFlow.type === 'whatsapp')) {
                             handleSendAction();
                             setShowDropdown(false);
                         }
@@ -172,7 +179,7 @@ export default function ContactInputStep({ activeSendFlow, setActiveSendFlow, ex
                     <X className="w-4 h-4" />
                 </button>
                 <button
-                    onClick={() => activeSendFlow.value && handleSendAction()}
+                    onClick={() => (activeSendFlow.value || activeSendFlow.type === 'whatsapp') && handleSendAction()}
                     className="bg-purple-600 hover:bg-purple-500 text-white p-2 rounded-lg transition-colors shadow-lg shadow-purple-900/20"
                 >
                     {loadingAction ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
