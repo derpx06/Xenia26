@@ -106,6 +106,7 @@ export default function OutreachChat() {
   const [loadingAction, setLoadingAction] = useState(false);
   const [playingAudioMsgId, setPlayingAudioMsgId] = useState(null);
   const [selectedImage, setSelectedImage] = useState(null);
+  const [senderIdentity, setSenderIdentity] = useState({ name: "", email: "" });
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -131,11 +132,58 @@ export default function OutreachChat() {
     localStorage.setItem("outreach-chat-history", JSON.stringify(messages));
   }, [messages]);
 
+  useEffect(() => {
+    const resolveSenderIdentity = async () => {
+      let email = "";
+      let name = "";
+      try {
+        const rawUser = localStorage.getItem("user");
+        const parsedUser = rawUser ? JSON.parse(rawUser) : {};
+        email =
+          localStorage.getItem("userEmail") ||
+          parsedUser?.email ||
+          "";
+        name =
+          localStorage.getItem("userName") ||
+          localStorage.getItem("name") ||
+          parsedUser?.name ||
+          "";
+      } catch (_err) {
+        email = localStorage.getItem("userEmail") || "";
+        name = localStorage.getItem("userName") || localStorage.getItem("name") || "";
+      }
+
+      if (email) {
+        try {
+          const res = await fetch(`${BACKEND_API_URL}/user/profile/${encodeURIComponent(email)}`);
+          if (res.ok) {
+            const data = await res.json();
+            const profileUser = data?.user || {};
+            email = profileUser.email || email;
+            name = profileUser.name || name;
+            if (name) localStorage.setItem("userName", name);
+            if (email) localStorage.setItem("userEmail", email);
+          }
+        } catch (error) {
+          console.error("Failed to resolve sender profile:", error);
+        }
+      }
+
+      setSenderIdentity({
+        email: (email || "").trim().toLowerCase(),
+        name: (name || "").trim(),
+      });
+    };
+
+    resolveSenderIdentity();
+  }, []);
+
   // Fetch Contacts
   useEffect(() => {
     const fetchContacts = async () => {
       try {
-        const userEmail = localStorage.getItem("userEmail") || "";
+        const userEmail = senderIdentity.email || localStorage.getItem("userEmail") || "";
+        if (!userEmail) return;
         const res = await fetch(`${BACKEND_API_URL}/contacts?email=${encodeURIComponent(userEmail)}`, {
           headers: { "x-user-email": userEmail }
         });
@@ -148,12 +196,12 @@ export default function OutreachChat() {
       }
     };
     fetchContacts();
-  }, []);
+  }, [senderIdentity.email]);
 
   useEffect(() => {
     const fetchVoices = async () => {
       try {
-        const userEmail = localStorage.getItem("userEmail");
+        const userEmail = senderIdentity.email || localStorage.getItem("userEmail");
         const res = await fetch(`${API_BASE_URL}/ml/agent/sarge/voices?email=${encodeURIComponent(userEmail || "")}`);
         if (!res.ok) {
           setTtsAvailable(false);
@@ -179,7 +227,7 @@ export default function OutreachChat() {
       }
     };
     fetchVoices();
-  }, []);
+  }, [senderIdentity.email]);
 
   // Scroll to bottom
   useEffect(() => {
@@ -374,10 +422,10 @@ export default function OutreachChat() {
       alert(ttsError || "TTS is unavailable on backend.");
       return;
     }
-    try {
-      setLoadingAction(true);
-      const userEmail = localStorage.getItem("userEmail");
-      const selectedCustomVoice = customVoices.find((v) => v.id === selectedCustomVoiceId);
+      try {
+        setLoadingAction(true);
+        const userEmail = senderIdentity.email || localStorage.getItem("userEmail");
+        const selectedCustomVoice = customVoices.find((v) => v.id === selectedCustomVoiceId);
       if (voiceMode === "custom" && !selectedCustomVoiceId) {
         alert("Select a saved audio sample first.");
         setLoadingAction(false);
@@ -495,8 +543,8 @@ export default function OutreachChat() {
     setMessages(prev => [...prev, initialAssistantMsg]);
 
     try {
-      const userEmail = localStorage.getItem("userEmail") || "";
-      const senderName =
+      const userEmail = senderIdentity.email || localStorage.getItem("userEmail") || "";
+      const senderName = senderIdentity.name ||
         localStorage.getItem("userName") ||
         localStorage.getItem("name") ||
         "";

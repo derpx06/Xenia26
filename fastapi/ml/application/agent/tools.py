@@ -161,7 +161,7 @@ Subject: [your generated subject line here]
 EMAIL_DRAFT_END
 
 Make the email highly personalized, relevant to the company and purpose. Keep it concise (3-4 short paragraphs).
-Include a clear call-to-action. Sign off as "[Your Name]" at the end."""
+Include a clear call-to-action. Use a natural sign-off with no placeholders."""
 
     try:
         from ml.settings import settings
@@ -186,8 +186,7 @@ I believe {company} could benefit from exploring this opportunity, and I'd love 
 
 Would you be available for a brief conversation this week?
 
-Best regards,
-[Your Name]
+Best regards
 EMAIL_DRAFT_END"""
 
 

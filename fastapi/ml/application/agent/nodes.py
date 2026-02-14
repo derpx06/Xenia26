@@ -663,6 +663,7 @@ async def scribe_node(state: AgentState) -> AgentState:
     target_recent_focus = re.sub(r"\s+", " ", (target_recent_focus or "")).strip()[:320]
 
     sender_name = sender_ctx.name if sender_ctx and sender_ctx.name else "You"
+    sender_email = sender_ctx.email if sender_ctx and sender_ctx.email else (state.user_email or "")
     sender_role = sender_ctx.role if sender_ctx and sender_ctx.role else "Professional"
     sender_company = sender_ctx.company if sender_ctx and sender_ctx.company else "Your Company"
     sender_value_prop = sender_ctx.value_proposition if sender_ctx and sender_ctx.value_proposition else "Clear value aligned with the topic."
@@ -689,6 +690,7 @@ Recent focus: {target_recent_focus or 'n/a'}
 
 SENDER:
 Name: {sender_name}
+Email: {sender_email or 'n/a'}
 Role: {sender_role} at {sender_company}
 Credibility: {sender_value_prop}
 
