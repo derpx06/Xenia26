@@ -1069,69 +1069,60 @@ export default function OutreachChat({ mode = "outreach" }) {
             {/* Chat Scroll Area */}
             <div className={`flex-1 overflow-y-auto pt-24 md:pt-28 pb-6 space-y-6 custom-scrollbar scroll-smooth ${isWriterMode ? "px-4 md:px-12" : "px-4 md:px-20"}`}>
                 {isWriterMode && (
-                  <div className="article-sheet rounded-2xl p-4 md:p-5 max-w-4xl mx-auto">
-                    <p className="text-[11px] tracking-[0.2em] uppercase text-amber-300/70 mb-3">Active Article Brief</p>
-                    <div className="flex flex-wrap gap-2 text-xs">
-                      <span className="writer-chip rounded-full px-3 py-1 text-amber-100">{writerFormat}</span>
-                      <span className="writer-chip rounded-full px-3 py-1 text-amber-100">{writerTone}</span>
-                      <span className="writer-chip rounded-full px-3 py-1 text-amber-100">{writerTargetWords || "900"} words</span>
-                      <span className="writer-chip rounded-full px-3 py-1 text-amber-100">{writerAudience || "Audience not set"}</span>
+                  <div className="article-sheet rounded-xl p-3 md:p-3.5 max-w-4xl mx-auto">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[10px] tracking-[0.18em] uppercase text-amber-300/70">Active Brief</p>
+                      <span className="text-[10px] text-amber-100/80">
+                        {latestDraftWordCount || 0}w · {latestDraftReadMinutes}m read
+                      </span>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+                      <span className="writer-chip rounded-full px-2.5 py-0.5 text-amber-100">{writerFormat}</span>
+                      <span className="writer-chip rounded-full px-2.5 py-0.5 text-amber-100">{writerTone}</span>
+                      <span className="writer-chip rounded-full px-2.5 py-0.5 text-amber-100">{writerTargetWords || "900"} words</span>
                       {writerKeyword && (
-                        <span className="writer-chip rounded-full px-3 py-1 text-amber-100">SEO: {writerKeyword}</span>
+                        <span className="writer-chip rounded-full px-2.5 py-0.5 text-amber-100">SEO: {writerKeyword}</span>
                       )}
                     </div>
+
                     {writerTitle && (
-                      <p className="text-amber-50 mt-3 text-sm">
+                      <p className="text-amber-100/90 mt-2 text-xs truncate">
                         <span className="text-amber-300/80">Title:</span> {writerTitle}
                       </p>
                     )}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
-                      <div className="rounded-xl border border-amber-300/20 bg-black/20 px-3 py-2">
-                        <p className="text-[10px] uppercase tracking-wider text-amber-300/70">Draft Words</p>
-                        <p className="text-amber-50 text-sm font-semibold">{latestDraftWordCount || 0}</p>
-                      </div>
-                      <div className="rounded-xl border border-amber-300/20 bg-black/20 px-3 py-2">
-                        <p className="text-[10px] uppercase tracking-wider text-amber-300/70">Read Time</p>
-                        <p className="text-amber-50 text-sm font-semibold">{latestDraftReadMinutes} min</p>
-                      </div>
-                      <div className="rounded-xl border border-amber-300/20 bg-black/20 px-3 py-2">
-                        <p className="text-[10px] uppercase tracking-wider text-amber-300/70">Primary Tone</p>
-                        <p className="text-amber-50 text-sm font-semibold">{writerTone}</p>
-                      </div>
-                      <div className="rounded-xl border border-amber-300/20 bg-black/20 px-3 py-2">
-                        <p className="text-[10px] uppercase tracking-wider text-amber-300/70">Structure</p>
-                        <p className="text-amber-50 text-sm font-semibold">{writerFormat}</p>
-                      </div>
-                    </div>
-                    <div className="mt-4">
-                      <p className="text-[10px] uppercase tracking-[0.18em] text-amber-300/65 mb-2">Quick Actions</p>
-                      <div className="flex flex-wrap gap-2">
+
+                    <details className="mt-2 group">
+                      <summary className="list-none cursor-pointer text-[10px] text-amber-300/80 hover:text-amber-200 uppercase tracking-[0.16em]">
+                        More Actions
+                      </summary>
+                      <div className="flex flex-wrap gap-2 mt-2">
                         <button
                           onClick={() => setInput("Create a structured outline with H2/H3 sections before writing the full article.")}
-                          className="px-3 py-1.5 rounded-lg border border-amber-300/25 bg-amber-300/10 text-[11px] text-amber-100 hover:bg-amber-300/15 transition-colors"
+                          className="px-2.5 py-1 rounded-lg border border-amber-300/25 bg-amber-300/10 text-[10px] text-amber-100 hover:bg-amber-300/15 transition-colors"
                         >
                           Build Outline
                         </button>
                         <button
                           onClick={() => setInput(`Expand this article with one extra practical section and examples:\n\n${latestAssistantDraft || ""}`)}
-                          className="px-3 py-1.5 rounded-lg border border-amber-300/25 bg-amber-300/10 text-[11px] text-amber-100 hover:bg-amber-300/15 transition-colors"
+                          className="px-2.5 py-1 rounded-lg border border-amber-300/25 bg-amber-300/10 text-[10px] text-amber-100 hover:bg-amber-300/15 transition-colors"
                         >
-                          Expand Draft
+                          Expand
                         </button>
                         <button
                           onClick={() => setInput(`Tighten this article to ${Math.max(400, Number.parseInt(writerTargetWords || "900", 10) - 200)} words while keeping clarity:\n\n${latestAssistantDraft || ""}`)}
-                          className="px-3 py-1.5 rounded-lg border border-amber-300/25 bg-amber-300/10 text-[11px] text-amber-100 hover:bg-amber-300/15 transition-colors"
+                          className="px-2.5 py-1 rounded-lg border border-amber-300/25 bg-amber-300/10 text-[10px] text-amber-100 hover:bg-amber-300/15 transition-colors"
                         >
-                          Shorten Draft
+                          Shorten
                         </button>
                         <button
                           onClick={() => setInput(`Improve this article for SEO keyword "${writerKeyword || "ai outreach"}" and preserve readability:\n\n${latestAssistantDraft || ""}`)}
-                          className="px-3 py-1.5 rounded-lg border border-amber-300/25 bg-amber-300/10 text-[11px] text-amber-100 hover:bg-amber-300/15 transition-colors"
+                          className="px-2.5 py-1 rounded-lg border border-amber-300/25 bg-amber-300/10 text-[10px] text-amber-100 hover:bg-amber-300/15 transition-colors"
                         >
                           SEO Pass
                         </button>
                       </div>
-                    </div>
+                    </details>
                   </div>
                 )}
                 {messages.map((msg, i) => (
