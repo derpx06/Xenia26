@@ -33,6 +33,7 @@ console.log("🛣️ Setting up routes...");
 app.use("/api/auth", authRoutes);
 app.use('/api/contacts', contactRoutes);
 app.use("/api/send", sendRoute);
+app.use("/api/chat", require("./routes/chat"));
 app.use("/api/user", userRoutes);
 console.log("✅ Routes set up");
 

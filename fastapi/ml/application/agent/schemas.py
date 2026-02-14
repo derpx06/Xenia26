@@ -68,6 +68,7 @@ class MentionTargetProfile(BaseModel):
 
 class MentionSenderProfile(BaseModel):
     name: str = ""
+    email: str = ""
     role: str = ""
     company: str = ""
     credibility_points: List[str] = Field(default_factory=list)

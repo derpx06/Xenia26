@@ -1,20 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { Send, Mail, Phone, X, Bot, Loader2, ArrowRight, Sparkles, Zap, MessageSquare, ChevronRight, ChevronLeft, Volume2, StopCircle, Play, Pause, Settings2, Paperclip } from "lucide-react";
+import { Send, Mail, Phone, X, Loader2, Sparkles, ChevronRight, ChevronLeft, Volume2, Settings2, Paperclip } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import MarkdownRenderer from "../components/MarkdownRenderer";
-import { ToolCalls, ToolResult } from "../components/thread/messages/tool-calls";
 import MessageAudioPlayer from "../components/thread/messages/MessageAudioPlayer";
 import { EmailPreviewCard } from "../components/thread/messages/EmailPreviewCard";
 import { WhatsAppPreviewCard } from "../components/thread/messages/WhatsAppPreviewCard";
 import { LinkedInPreviewCard } from "../components/thread/messages/LinkedInPreviewCard";
 import ContactInputStep from "../components/ContactInputStep";
-
-
-// --- FRIEND'S ARCHITECTURE IMPORTS ---
-import { Thread } from "../components/thread/Thread";
-import { StreamProvider } from "../providers/Stream";
-import { ThreadProvider } from "../providers/Thread";
-import { ArtifactProvider } from "../components/thread/artifact";
+import ChatSidebar from "../components/ChatSidebar";
+import { useDebounce } from "use-debounce";
+import { motion, AnimatePresence } from "framer-motion";
 
 const CarouselContainer = ({ children }) => {
   const scrollRef = useRef(null);
@@ -85,28 +80,14 @@ export default function OutreachChat() {
   // --- UI STATE ---
   const [hasStarted, setHasStarted] = useState(false);
   const [agentStatus, setAgentStatus] = useState("Idle");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Default closed as per request
 
   // --- LOGIC STATE ---
   // --- LOGIC STATE ---
-  const [messages, setMessages] = useState(() => {
-    const saved = localStorage.getItem("outreach-chat-history");
-    try {
-      return saved ? JSON.parse(saved) : [
-        {
-          role: "assistant",
-          type: "text",
-          content: "Hello! I am Verve. I can help you draft emails, find contacts, or negotiate deals. How can I help you today?",
-        },
-      ];
-    } catch (e) {
-      console.error("Failed to parse chat history:", e);
-      return [{
-        role: "assistant",
-        type: "text",
-        content: "Hello! I am Verve. I can help you draft emails, find contacts, or negotiate deals. How can I help you today?",
-      }];
-    }
-  });
+  const [chatSessions, setChatSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState(null);
+  const [messages, setMessages] = useState([]); // Loaded from DB or empty
+  const [messagesDebounced] = useDebounce(messages, 2000); // Auto-save trigger
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
@@ -114,6 +95,7 @@ export default function OutreachChat() {
   const [loadingAction, setLoadingAction] = useState(false);
   const [playingAudioMsgId, setPlayingAudioMsgId] = useState(null);
   const [selectedImage, setSelectedImage] = useState(null);
+  const [senderIdentity, setSenderIdentity] = useState({ name: "", email: "" });
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -134,16 +116,215 @@ export default function OutreachChat() {
   const [ttsError, setTtsError] = useState("");
 
 
-  // Persist messages to local storage
+  // --- SESSION MANAGEMENT ---
+
+  // 1. Fetch Sessions List
   useEffect(() => {
-    localStorage.setItem("outreach-chat-history", JSON.stringify(messages));
-  }, [messages]);
+    const fetchSessions = async () => {
+      const userEmail = senderIdentity.email || localStorage.getItem("userEmail");
+      if (!userEmail) return;
+
+      try {
+        const res = await fetch(`${BACKEND_API_URL}/chat/sessions?email=${encodeURIComponent(userEmail)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setChatSessions(data);
+
+          // If no active session, auto-select most recent or create new
+          if (!activeSessionId) {
+            if (data.length > 0) {
+              setActiveSessionId(data[0]._id);
+            } else {
+              handleCreateSession(userEmail); // Auto-create first chat
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch sessions:", err);
+      }
+    };
+
+    if (senderIdentity.email) fetchSessions();
+  }, [senderIdentity.email]);
+
+  // 2. Fetch Messages for Active Session
+  useEffect(() => {
+    const fetchSessionMessages = async () => {
+      if (!activeSessionId) return;
+      try {
+        const res = await fetch(`${BACKEND_API_URL}/chat/sessions/${activeSessionId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setMessages(data.messages || []);
+        }
+      } catch (err) {
+        console.error("Failed to fetch messages:", err);
+      }
+    };
+    fetchSessionMessages();
+  }, [activeSessionId]);
+
+  // 3. Auto-Save Logic (Sync to DB)
+  useEffect(() => {
+    const syncSession = async () => {
+      if (!activeSessionId || messages.length === 0) return;
+
+      try {
+        // Determine dynamic title if it's "New Chat" and we have user messages
+        let newTitle = undefined;
+        const currentSession = chatSessions.find(s => s._id === activeSessionId);
+        if (currentSession && currentSession.title === "New Chat") {
+          const firstUserMsg = messages.find(m => m.role === 'user');
+          if (firstUserMsg) {
+            newTitle = firstUserMsg.content.slice(0, 30) + (firstUserMsg.content.length > 30 ? "..." : "");
+          }
+        }
+
+        await fetch(`${BACKEND_API_URL}/chat/sessions/${activeSessionId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages,
+            title: newTitle
+          })
+        });
+
+        // Refresh list if title changed
+        if (newTitle) {
+          setChatSessions(prev => prev.map(s =>
+            s._id === activeSessionId ? { ...s, title: newTitle, lastUpdated: new Date().toISOString() } : s
+          ));
+        }
+
+      } catch (err) {
+        console.error("Failed to sync session:", err);
+      }
+    };
+
+    if (messagesDebounced.length > 0) {
+      syncSession();
+    }
+  }, [messagesDebounced, activeSessionId]);
+
+  const handleCreateSession = async (emailOverride = null) => {
+    const email = emailOverride || senderIdentity.email || localStorage.getItem("userEmail");
+    if (!email) return;
+
+    try {
+      const initialMsg = {
+        role: "assistant",
+        type: "text",
+        content: "Hello! I am Verve. I can help you draft emails, find contacts, or negotiate deals. How can I help you today?",
+        id: Date.now().toString()
+      };
+
+      const res = await fetch(`${BACKEND_API_URL}/chat/sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userEmail: email,
+          title: "New Chat",
+          messages: [initialMsg]
+        })
+      });
+
+      if (res.ok) {
+        const newSession = await res.json();
+        setChatSessions([newSession, ...chatSessions]);
+        setActiveSessionId(newSession._id);
+        setMessages([initialMsg]);
+        setHasStarted(false); // Go to splash screen for new chat feels fresh
+      }
+    } catch (err) {
+      console.error("Failed to create session:", err);
+    }
+  };
+
+  const handleDeleteSession = async (sessionId) => {
+    try {
+      const res = await fetch(`${BACKEND_API_URL}/chat/sessions/${sessionId}`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        const newSessions = chatSessions.filter(s => s._id !== sessionId);
+        setChatSessions(newSessions);
+        if (activeSessionId === sessionId) {
+          setActiveSessionId(newSessions.length > 0 ? newSessions[0]._id : null);
+          if (newSessions.length === 0) {
+            handleCreateSession(); // Ensure always one chat
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to delete session:", err);
+    }
+  };
+
+  const handleRenameSession = async (sessionId, newTitle) => {
+    try {
+      setChatSessions(prev => prev.map(s => s._id === sessionId ? { ...s, title: newTitle } : s));
+      await fetch(`${BACKEND_API_URL} /chat/sessions / ${sessionId} `, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: newTitle })
+      });
+    } catch (err) {
+      console.error("Failed to rename session:", err);
+    }
+  };
+
+  useEffect(() => {
+    const resolveSenderIdentity = async () => {
+      let email = "";
+      let name = "";
+      try {
+        const rawUser = localStorage.getItem("user");
+        const parsedUser = rawUser ? JSON.parse(rawUser) : {};
+        email =
+          localStorage.getItem("userEmail") ||
+          parsedUser?.email ||
+          "";
+        name =
+          localStorage.getItem("userName") ||
+          localStorage.getItem("name") ||
+          parsedUser?.name ||
+          "";
+      } catch (_err) {
+        email = localStorage.getItem("userEmail") || "";
+        name = localStorage.getItem("userName") || localStorage.getItem("name") || "";
+      }
+
+      if (email) {
+        try {
+          const res = await fetch(`${BACKEND_API_URL} /user/profile / ${encodeURIComponent(email)} `);
+          if (res.ok) {
+            const data = await res.json();
+            const profileUser = data?.user || {};
+            email = profileUser.email || email;
+            name = profileUser.name || name;
+            if (name) localStorage.setItem("userName", name);
+            if (email) localStorage.setItem("userEmail", email);
+          }
+        } catch (error) {
+          console.error("Failed to resolve sender profile:", error);
+        }
+      }
+
+      setSenderIdentity({
+        email: (email || "").trim().toLowerCase(),
+        name: (name || "").trim(),
+      });
+    };
+
+    resolveSenderIdentity();
+  }, []);
 
   // Fetch Contacts
   useEffect(() => {
     const fetchContacts = async () => {
       try {
-        const userEmail = localStorage.getItem("userEmail") || "";
+        const userEmail = senderIdentity.email || localStorage.getItem("userEmail") || "";
+        if (!userEmail) return;
         const res = await fetch(`${BACKEND_API_URL}/contacts?email=${encodeURIComponent(userEmail)}`, {
           headers: { "x-user-email": userEmail }
         });
@@ -156,12 +337,12 @@ export default function OutreachChat() {
       }
     };
     fetchContacts();
-  }, []);
+  }, [senderIdentity.email]);
 
   useEffect(() => {
     const fetchVoices = async () => {
       try {
-        const userEmail = localStorage.getItem("userEmail");
+        const userEmail = senderIdentity.email || localStorage.getItem("userEmail");
         const res = await fetch(`${API_BASE_URL}/ml/agent/sarge/voices?email=${encodeURIComponent(userEmail || "")}`);
         if (!res.ok) {
           setTtsAvailable(false);
@@ -187,7 +368,7 @@ export default function OutreachChat() {
       }
     };
     fetchVoices();
-  }, []);
+  }, [senderIdentity.email]);
 
   // Scroll to bottom
   useEffect(() => {
@@ -379,7 +560,8 @@ export default function OutreachChat() {
           const data = await res.json();
           alert(`❌ Failed: ${data.message}`);
         }
-      }
+      } // Close email block
+
     } catch (err) {
       console.error(err);
       alert(`Error executing action: ${err.message || err}`);
@@ -736,9 +918,37 @@ export default function OutreachChat() {
       `}</style>
 
       <Sidebar />
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <motion.div
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: "auto", opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            className="flex flex-col h-full border-r border-white/5 bg-[#0A0A0A] z-40 overflow-hidden"
+          >
+            <ChatSidebar
+              sessions={chatSessions}
+              activeSessionId={activeSessionId}
+              onSelectSession={(id) => { setActiveSessionId(id); setHasStarted(true); }}
+              onCreateSession={() => handleCreateSession()}
+              onDeleteSession={handleDeleteSession}
+              onRenameSession={handleRenameSession}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Main Content Area */}
-      <div className="flex-1 w-full relative aurora-bg flex flex-col h-full overflow-x-hidden">
+      <div className={`flex-1 w-full relative aurora-bg flex flex-col h-full overflow-x-hidden transition-all duration-300 ${isSidebarOpen ? "opacity-40 pointer-events-none" : ""}`}>
+
+        {/* Toggle Button */}
+        <button
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className="absolute top-4 left-14 md:left-4 z-50 p-2 bg-[#1A1A1A]/80 backdrop-blur-md border border-white/10 rounded-lg text-white hover:bg-white/10 transition-colors shadow-lg pointer-events-auto"
+          title={isSidebarOpen ? "Close History" : "Open History"}
+        >
+          {isSidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+        </button>
 
         {/* --- STATE 1: INTRO SCREEN --- */}
         {!hasStarted ? (

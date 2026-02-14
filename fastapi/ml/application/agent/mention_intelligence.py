@@ -321,6 +321,7 @@ def _extract_sender_profile(sender_doc: Optional[Dict[str, Any]], user_email: st
         fallback_name = _fallback_name_from_email(user_email)
         return MentionSenderProfile(
             name=fallback_name,
+            email=(user_email or "").strip().lower(),
             value_proposition=(
                 f"{fallback_name} is reaching out with a focused and relevant collaboration proposal."
                 if fallback_name else ""
@@ -357,6 +358,7 @@ def _extract_sender_profile(sender_doc: Optional[Dict[str, Any]], user_email: st
 
     return MentionSenderProfile(
         name=(sender_doc.get("name") or "").strip(),
+        email=(sender_doc.get("email") or user_email or "").strip().lower(),
         role=role,
         company=company,
         credibility_points=_clip_list(credibility, 5),
@@ -459,6 +461,7 @@ def _build_compressed_memory(
         f"- Recent focus: {_truncate_words(target.recent_focus_summary, 60) or 'n/a'}",
         "SENDER:",
         f"- Name: {sender.name or 'Unknown'}",
+        f"- Email: {sender.email or 'n/a'}",
         f"- Role: {sender.role or 'Unknown'} at {sender.company or 'Unknown'}",
         f"- Credibility: {', '.join(sender.credibility_points[:4]) or 'n/a'}",
         f"- Value proposition: {_truncate_words(sender.value_proposition, 55) or 'n/a'}",

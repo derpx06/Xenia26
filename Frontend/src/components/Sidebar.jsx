@@ -137,7 +137,6 @@ export default function Sidebar() {
           <NavItem icon={Send} label="Outreach" to="/outreach" isOpen={isOpen} onClick={() => window.innerWidth < 768 && setIsOpen(false)} />
           <NavItem icon={BarChart3} label="Analytics" to="/Analytics" isOpen={isOpen} onClick={() => window.innerWidth < 768 && setIsOpen(false)} />
           <NavItem icon={User} label="Profile" to="/profile" isOpen={isOpen} onClick={() => window.innerWidth < 768 && setIsOpen(false)} />
-          <NavItem icon={Settings} label="Settings" to="/settings" isOpen={isOpen} onClick={() => window.innerWidth < 768 && setIsOpen(false)} />
         </nav>
 
         {/* User Profile Section */}
