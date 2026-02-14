@@ -1069,31 +1069,25 @@ export default function OutreachChat({ mode = "outreach" }) {
             {/* Chat Scroll Area */}
             <div className={`flex-1 overflow-y-auto pt-24 md:pt-28 pb-6 space-y-6 custom-scrollbar scroll-smooth ${isWriterMode ? "px-4 md:px-12" : "px-4 md:px-20"}`}>
                 {isWriterMode && (
-                  <div className="article-sheet rounded-xl p-3 md:p-3.5 max-w-4xl mx-auto">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[10px] tracking-[0.18em] uppercase text-amber-300/70">Active Brief</p>
-                      <span className="text-[10px] text-amber-100/80">
-                        {latestDraftWordCount || 0}w · {latestDraftReadMinutes}m read
-                      </span>
-                    </div>
-
-                    <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
-                      <span className="writer-chip rounded-full px-2.5 py-0.5 text-amber-100">{writerFormat}</span>
-                      <span className="writer-chip rounded-full px-2.5 py-0.5 text-amber-100">{writerTone}</span>
-                      <span className="writer-chip rounded-full px-2.5 py-0.5 text-amber-100">{writerTargetWords || "900"} words</span>
+                  <div className="max-w-4xl mx-auto">
+                    <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap rounded-full border border-amber-300/25 bg-[#120d08]/90 px-2.5 py-1.5">
+                      <span className="rounded-full bg-amber-300/18 border border-amber-300/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-amber-200">Brief</span>
+                      <span className="writer-chip rounded-full px-2.5 py-0.5 text-amber-100 text-[11px]">{writerFormat}</span>
+                      <span className="writer-chip rounded-full px-2.5 py-0.5 text-amber-100 text-[11px]">{writerTone}</span>
+                      <span className="writer-chip rounded-full px-2.5 py-0.5 text-amber-100 text-[11px]">{writerTargetWords || "900"}w</span>
+                      <span className="writer-chip rounded-full px-2.5 py-0.5 text-amber-100 text-[11px]">{latestDraftWordCount || 0}w · {latestDraftReadMinutes}m</span>
                       {writerKeyword && (
-                        <span className="writer-chip rounded-full px-2.5 py-0.5 text-amber-100">SEO: {writerKeyword}</span>
+                        <span className="writer-chip rounded-full px-2.5 py-0.5 text-amber-100 text-[11px]">SEO: {writerKeyword}</span>
+                      )}
+                      {writerTitle && (
+                        <span className="writer-chip rounded-full px-2.5 py-0.5 text-amber-100 text-[11px] max-w-[220px] truncate">
+                          {writerTitle}
+                        </span>
                       )}
                     </div>
 
-                    {writerTitle && (
-                      <p className="text-amber-100/90 mt-2 text-xs truncate">
-                        <span className="text-amber-300/80">Title:</span> {writerTitle}
-                      </p>
-                    )}
-
-                    <details className="mt-2 group">
-                      <summary className="list-none cursor-pointer text-[10px] text-amber-300/80 hover:text-amber-200 uppercase tracking-[0.16em]">
+                    <details className="mt-1.5 group">
+                      <summary className="list-none cursor-pointer text-[10px] text-amber-300/80 hover:text-amber-200 uppercase tracking-[0.16em] px-1">
                         More Actions
                       </summary>
                       <div className="flex flex-wrap gap-2 mt-2">
