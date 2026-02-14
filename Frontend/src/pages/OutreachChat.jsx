@@ -73,6 +73,37 @@ const CarouselContainer = ({ children }) => {
   );
 };
 
+const countWords = (text) => {
+  if (!text) return 0;
+  return text.trim().split(/\s+/).filter(Boolean).length;
+};
+
+const WRITER_FORMAT_OPTIONS = [
+  "Thought Leadership",
+  "How-to Guide",
+  "Case Study",
+  "Product Update",
+  "Newsletter Issue",
+  "LinkedIn Post"
+];
+
+const WRITER_TONE_OPTIONS = [
+  "Insightful",
+  "Professional",
+  "Conversational",
+  "Bold",
+  "Empathetic",
+  "Data-Driven"
+];
+
+const WRITER_PROMPT_PRESETS = [
+  "Write a thought leadership article about the future of AI in sales.",
+  "Draft a LinkedIn post announcing our new product launch.",
+  "Create a how-to guide for optimizing B2B outreach campaigns.",
+  "Write a newsletter intro about market trends in 2024.",
+  "Compose a case study about a successful client partnership."
+];
+
 const API_BASE_URL = "http://127.0.0.1:8000";
 const BACKEND_API_URL = "http://localhost:8080/api";
 
@@ -188,33 +219,33 @@ export default function OutreachChat({ mode = "outreach" }) {
   useEffect(() => {
     const syncSession = async () => {
       if (!activeSessionId || messages.length === 0) return;
-      
+
       try {
-         // Determine dynamic title if it's "New Chat" and we have user messages
-         let newTitle = undefined;
-         const currentSession = chatSessions.find(s => s._id === activeSessionId);
-         if (currentSession && currentSession.title === "New Chat") {
-           const firstUserMsg = messages.find(m => m.role === 'user');
-           if (firstUserMsg) {
-             newTitle = firstUserMsg.content.slice(0, 30) + (firstUserMsg.content.length > 30 ? "..." : "");
-           }
-         }
+        // Determine dynamic title if it's "New Chat" and we have user messages
+        let newTitle = undefined;
+        const currentSession = chatSessions.find(s => s._id === activeSessionId);
+        if (currentSession && currentSession.title === "New Chat") {
+          const firstUserMsg = messages.find(m => m.role === 'user');
+          if (firstUserMsg) {
+            newTitle = firstUserMsg.content.slice(0, 30) + (firstUserMsg.content.length > 30 ? "..." : "");
+          }
+        }
 
-         await fetch(`${BACKEND_API_URL}/chat/sessions/${activeSessionId}`, {
-           method: "PUT",
-           headers: { "Content-Type": "application/json" },
-           body: JSON.stringify({ 
-             messages,
-             title: newTitle 
-           })
-         });
+        await fetch(`${BACKEND_API_URL}/chat/sessions/${activeSessionId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages,
+            title: newTitle
+          })
+        });
 
-         // Refresh list if title changed
-         if (newTitle) {
-            setChatSessions(prev => prev.map(s => 
-              s._id === activeSessionId ? { ...s, title: newTitle, lastUpdated: new Date().toISOString() } : s
-            ));
-         }
+        // Refresh list if title changed
+        if (newTitle) {
+          setChatSessions(prev => prev.map(s =>
+            s._id === activeSessionId ? { ...s, title: newTitle, lastUpdated: new Date().toISOString() } : s
+          ));
+        }
 
       } catch (err) {
         console.error("Failed to sync session:", err);
@@ -270,9 +301,9 @@ export default function OutreachChat({ mode = "outreach" }) {
         setChatSessions(newSessions);
         if (activeSessionId === sessionId) {
           setActiveSessionId(newSessions.length > 0 ? newSessions[0]._id : null);
-           if (newSessions.length === 0) {
-             handleCreateSession(); // Ensure always one chat
-           }
+          if (newSessions.length === 0) {
+            handleCreateSession(); // Ensure always one chat
+          }
         }
       }
     } catch (err) {
@@ -1004,11 +1035,11 @@ export default function OutreachChat({ mode = "outreach" }) {
 
         {/* Toggle Button */}
         <button
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="absolute top-4 left-14 md:left-4 z-50 p-2 bg-[#1A1A1A]/80 backdrop-blur-md border border-white/10 rounded-lg text-white hover:bg-white/10 transition-colors shadow-lg pointer-events-auto"
-            title={isSidebarOpen ? "Close History" : "Open History"}
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          className="absolute top-4 left-14 md:left-4 z-50 p-2 bg-[#1A1A1A]/80 backdrop-blur-md border border-white/10 rounded-lg text-white hover:bg-white/10 transition-colors shadow-lg pointer-events-auto"
+          title={isSidebarOpen ? "Close History" : "Open History"}
         >
-            {isSidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          {isSidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         </button>
 
         {/* --- STATE 1: INTRO SCREEN --- */}
@@ -1554,15 +1585,18 @@ export default function OutreachChat({ mode = "outreach" }) {
                               )}
                             </div>
                           )}
-                        </div >
+                        </>
+                      );
+                    })()}
+                  </div>
                 </div>
               ))}
-                  <div ref={bottomRef} className="h-4" />
-                </div>
+              <div ref={bottomRef} className="h-4" />
+            </div>
 
 
-            {/* Input Area */ }
-                < div className = {`p-4 sm:p-6 relative z-40 shrink-0 w-full mx-auto ${isWriterMode ? "max-w-6xl" : "max-w-4xl"}`}>
+            {/* Input Area */}
+            < div className={`p-4 sm:p-6 relative z-40 shrink-0 w-full mx-auto ${isWriterMode ? "max-w-6xl" : "max-w-4xl"}`}>
               {isWriterMode && (
                 <div className="mb-4 article-sheet rounded-2xl p-4 sm:p-5">
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
