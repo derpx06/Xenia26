@@ -18,6 +18,33 @@ Xenia26 helps generate personalized outreach using:
 - Optional voice generation for drafted content.
 - Persisted threads and user/contact data.
 
+## Agent Architecture Diagram
+
+```mermaid
+graph TD
+    UI[Frontend Chat UI] -->|POST/SSE| API[FastAPI /ml/agent/chat]
+    API --> SARGE[Sarge Router Agent]
+    SARGE -->|route: deep outreach| IR[Intent Router]
+    SARGE -->|route: direct chat/refine| RESP[Direct Chat/Refine Response]
+
+    IR -->|small_talk/system| RESP
+    IR -->|outreach/research| SUP[Supervisor]
+
+    SUP --> H[Hunter]
+    H --> P[Profiler]
+    P --> ST[Strategist]
+    ST --> SC[Scribe]
+    SC --> CR[Critic]
+    CR -->|fail -> regenerate| SC
+    CR -->|pass| OUT[Structured Multi-Channel Output]
+
+    OUT --> UI
+```
+
+For deeper node-level docs, see:
+- `fastapi/ml/application/agent/ARCHITECTURE.md`
+- `PROJECT_ARCHITECTURE.md`
+
 ## Repository Structure
 
 ```text

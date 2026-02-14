@@ -1144,19 +1144,14 @@ export default function OutreachChat({ mode = "outreach" }) {
             <div className="absolute top-0 left-0 right-0 z-30 p-4 sm:p-6">
               <div className="glass-panel rounded-2xl px-4 pl-14 sm:pl-6 py-4 flex justify-between items-center shadow-lg">
                 <div className="flex items-center gap-4">
-                  {!isWriterMode ? (
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500/20 to-yellow-500/20 flex items-center justify-center border border-white/10 overflow-hidden">
-                      <img
-                        src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExOTd4aXpqOG9qbXJrbzA4a3A4c2N4ZjJoYzh4aHpwa2xsMHQ1eXoxeiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/5k5vZwRFZR5aZeniqb/giphy.gif"
-                        className="w-12 h-12 object-cover translate-y-1"
-                        alt="Mini Robot"
-                      />
-                    </div>
-                  ) : (
-                    <div className="w-10 h-10 rounded-xl bg-amber-300/15 border border-amber-300/35 flex items-center justify-center text-amber-200">
-                      <Sparkles className="w-5 h-5" />
-                    </div>
-                  )}
+                  <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-orange-500/20 to-yellow-500/20 flex items-center justify-center border border-white/10 overflow-hidden">
+                    <img
+                      src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExOTd4aXpqOG9qbXJrbzA4a3A4c2N4ZjJoYzh4aHpwa2xsMHQ1eXoxeiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/5k5vZwRFZR5aZeniqb/giphy.gif"
+                      className="w-12 h-12 object-cover translate-y-1"
+                      alt="Mini Verve"
+                    />
+                    <span className="absolute -right-0.5 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-emerald-400 border border-black shadow-[0_0_10px_rgba(16,185,129,0.8)]" />
+                  </div>
                   <div>
                     <h1 className="text-lg font-bold text-white">{assistantTitle}</h1>
                     <div className="flex items-center gap-1.5">
